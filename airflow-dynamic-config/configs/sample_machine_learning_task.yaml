@@ -1,0 +1,74 @@
+model_name: sample_machine_learning_task  # No model needed
+model_description: Sample config to demonstrate machine learning tasks
+data:
+  project: STAGING_PROJECT
+  source_types:
+    - type: kafka
+      name: wearable_heart_rate_kafka
+      source_config:
+        conn_id: kafka_staging
+        topics:
+          - wearable_heart_rate
+    - type: timescaledb
+      name: wearable_heart_rate_timescaledb
+      source_config:
+        conn_id: timescale_staging
+        tables:
+          - wearable_heart_rate
+tasks:
+  - task_name: inference_ml_model
+    type: ml_inference
+    depends_on:
+      - data_processing
+    enabled: true
+    schedule: "* * * * *"
+    path: github.com/radar-base/radar-ml
+    repo_config:
+      file_path: /inference/sample_project/infer_model.py
+      branch: main
+      auth_type: ssh
+      token_conn_id: radar_ml_ssh_key
+    params:
+      model_version: best
+      mlflow_experiment_name: sample experiment
+      server: airflow (will run it in the airflow operator)
+      threshold: 0.80
+    actions:
+      - type: "send_notification"
+        conditions:
+          - "anomaly_detection.participants_id.is_anomaly == true"
+        config: []
+      - type: "alert"
+        conditions:
+          - "anomaly_detection.participants_id.is_anomaly == true"
+        config:
+          method: "email"
+      - type: "alert"
+        conditions:
+          - "anomaly_detection.participants_id.is_anomaly == true"
+        config:
+          method: "api_request"
+
+  - task_name: training_ml_model
+    type: ml_training
+    depends_on:
+      - data_processing
+    enabled: true
+    schedule: "0 8 * * *"
+    path: github.com/radar-base/radar-ml
+    params:
+      script_path: /training/sample_project/train_model.py
+      hyperparameters:
+        learning_rate: 0.001
+        dropout_rate: 0.5
+        batch_size: 256
+        num_epochs: 100
+      server: "localhost:9000"
+      mlflow_experiment_name: sample experiment
+
+  - task_name: data_processing
+    type: custom_task
+    enabled: true
+    path: /data_processing/sample_project/data_cleaning.py
+    params:
+      cleaning_level: "standard"

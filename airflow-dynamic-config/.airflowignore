@@ -1,0 +1,8 @@
+# Ignore internal modules - they should only be imported, not parsed as DAGs
+# Use regex patterns - each line is a separate regex
+dagloader/.*
+dagloader
+__pycache__
+\.pyc$
+\.txt$
+

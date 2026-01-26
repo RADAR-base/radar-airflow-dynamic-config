@@ -1,0 +1,38 @@
+model_name: Sample_v2  # No model needed
+model_description: Sample
+data:
+  table: sample_table
+  project: Sample project
+tasks:
+  - task_name: custom_script
+    type: custom
+    depends_on: data_checks
+    schedule: "* * * * *"
+    path: /inference/sample_project/custom_script.py
+    config:
+      server: airflow (will run it in the airflow operator)
+    params:
+      threshold: 0.80
+
+
+  - task_name: missing_data_checks
+    type: data_checks
+    enabled: true
+    schedule: "0 8 * * *"
+    checks:
+      - type: "missing_data"
+        tables: sample_table
+        window_minutes: 15
+        min_records: 10
+    actions:
+      - type: "send_notification"
+        condutui: "is_anomaly"
+        value_condition: "eq"
+        value: "true"
+        config: []
+      - type: "alert"
+        config:
+          method: "email"
+      - type: "alert"
+        config:
+          method: "api_request"
