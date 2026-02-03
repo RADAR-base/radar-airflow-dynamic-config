@@ -1,5 +1,6 @@
 import rule_engine as re
-from airflow.sdk import task
+from airflow.sdk import task, BaseOperator
+
 
 class ConditionParser:
     def __init__(self, condition_str: str, condition_name: str = "default_condition"):

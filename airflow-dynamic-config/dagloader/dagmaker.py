@@ -4,6 +4,8 @@ from dagloader.configloader import ConfigLoader
 from airflow import DAG
 from dagloader.datareader.kafkadatareader import KafkaDataReader
 from dagloader.taskprocessor.missingdatataskprocessor import MissingDataTaskProcessor
+from dagloader.conditionparser import ConditionParser
+from dagloader.actionparser import ActionParser
 from typing import Dict
 
 logging.basicConfig(level=logging.INFO)
@@ -15,13 +17,14 @@ class DAGMaker:
         self.config_loader = ConfigLoader(config_path)
         self.config = self.config_loader.get_config()
 
-    def generate_task_dependencies(self, data_dags: Dict, task_dags: Dict) -> Dict:
+    def generate_task_dependencies(self, data_dags: Dict, task_dags: Dict, action_dags: Dict) -> Dict:
         """
         This function will generate task dependencies based on data DAGs and task DAGs.
         It will return a dictionary of DAGs with their tasks and dependencies.
         Algo:
         """
         dag_tasks = {}
+        logger.info(f"Actions dags: {action_dags}")
         for task_config in self.config.get('tasks', []):
             logger.info(f"Processing task config: {task_config}")
             schedule = task_config.get('schedule')
@@ -103,7 +106,7 @@ class DAGMaker:
         logger.info(f"Parsed task DAGs: {tasks_dags}")
         return tasks_dags
 
-    def parse_actions(self) -> Dict:
+    def parse_actions_and_conditions(self) -> Dict:
         """
         This function will parse the actions from the config.
         It will return a dictionary of actions with their configurations.
@@ -112,9 +115,18 @@ class DAGMaker:
         action_dags = {}
         for task in task_configs:
             for action in task.get('actions', []):
+                conditions_dags = []
+                for i, conditions in enumerate(action.get('conditions', [])):
+                    condition_parser = ConditionParser(
+                        condition_str=conditions,
+                        condition_name=f"{action.get('type',
+                        'default_condition')}_{i}"
+                    )
+                    conditions_dags.append(condition_parser)
                 if action['type'] == 'send_notification':
                     conditions = action.get('conditions', {})
         return action_dags
+
 
     def parse_configs(self) -> Dict:
         """
@@ -123,8 +135,9 @@ class DAGMaker:
         """
         data_dags = self.parse_data_dags()
         task_dags = self.parse_tasks()
-        #action_tasks = self.parse_actions()
-        dag_tasks = self.generate_task_dependencies(data_dags, task_dags)
+        action_tasks = self.parse_actions_and_conditions()
+        logger.info(f"Action tasks: {action_tasks}")
+        dag_tasks = self.generate_task_dependencies(data_dags, task_dags, action_tasks)
         return dag_tasks
 
     def generate_dags(self):
