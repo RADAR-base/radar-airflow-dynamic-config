@@ -1,5 +1,6 @@
 model_name: sample_missing_data  # No model needed
 model_description: Sample config to demonstrate missing data checks
+
 data:
   project: STAGING_PROJECT
   source_types:
@@ -20,8 +21,11 @@ tasks:
       window: "3 days"
       threshold: 1 # all the data missing in the window
       backoff: "2 days"
-    actions:
-      - type: "send_notification"
-        conditions:
-          - "participants_id != []"
-        config: []
+
+actions:
+  - name: notify_on_missing_data
+    type: "send_notification"
+    condition: "missing_data_check_1.participants_id != []"
+    depends_on:
+      - missing_data_check_1
+    config: []
