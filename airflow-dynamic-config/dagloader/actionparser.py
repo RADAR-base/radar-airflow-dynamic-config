@@ -1,6 +1,7 @@
 from airflow.providers.apache.kafka.operators.produce import (
     ProduceToTopicOperator
 )
+from airflow.sdk import BaseOperator
 
 class ActionParser:
     def __init__(self, actions: dict, output_topic: str = "output_topic", kafka_conn_id: str = "kafka_default"):
@@ -34,3 +35,14 @@ class ActionParser:
             report = {"action": action_details.get("type", "default_action"), "status": "completed"}
             return report
         return producer_function
+
+
+class ActionOperator(BaseOperator):
+    def __init__(self, actions: dict, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.action_parser = ActionParser(actions)
+        self.parsed_actions = self.action_parser.parse_actions()
+
+    def execute(self, context):
+        for action_name, action_task in self.parsed_actions.items():
+            action_task.execute(context)

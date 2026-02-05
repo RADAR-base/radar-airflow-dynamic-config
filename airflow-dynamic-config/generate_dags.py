@@ -16,6 +16,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def load_all_dags():
     """Load all DAGs from config files in the configs directory."""
     current_dir = os.path.dirname(os.path.abspath(__file__))

@@ -1,22 +1,26 @@
 model_name: sample_missing_data  # No model needed
 model_description: Sample config to demonstrate missing data checks
+schedule: "0 8 * * *"
+intermediate_results_storage:
+  type: local
+  config:
+    path: ./data/intermediate_results
 
 data:
   project: STAGING_PROJECT
   source_types:
     - type: kafka
       name: wearable_heart_rate_kafka
-      source_config:
+      config:
         conn_id: kafka_staging
         topics:
           - wearable_heart_rate
 tasks:
-  - task_name: missing_data_check_1
+  - name: missing_data_check_1
     type: data_checks
     data_sources:
       - wearable_heart_rate_kafka
     enabled: true
-    schedule: "0 8 * * *"
     params:
       window: "3 days"
       threshold: 1 # all the data missing in the window

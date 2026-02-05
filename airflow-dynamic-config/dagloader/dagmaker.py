@@ -2,10 +2,11 @@ from datetime import datetime, timedelta
 import logging
 from dagloader.configloader import ConfigLoader
 from airflow import DAG
-from dagloader.datareader.kafkadatareader import KafkaDataReader
-from dagloader.taskprocessor.missingdatataskprocessor import MissingDataTaskProcessor
-from dagloader.conditionparser import ConditionParser
-from dagloader.actionparser import ActionParser
+from dagloader.datareader.datareaderoperator import DataReaderOperator
+from dagloader.taskprocessor.taskoperator  import TaskOperator
+from dagloader.intermediatestorage.storagefactory import StorageFactory
+from dagloader.conditionparser import ConditionOperator
+from dagloader.actionparser import ActionOperator
 from typing import Dict
 
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +17,13 @@ class DAGMaker:
     def __init__(self, config_path: str):
         self.config_loader = ConfigLoader(config_path)
         self.config = self.config_loader.get_config()
+        intermediate_storage_config = self.config.get('intermediate_results_storage', {})
+        self.storage = StorageFactory.get_storage(
+            storage_type=intermediate_storage_config.get('type', 'local'),
+            **intermediate_storage_config.get('config', {})
+        )
+        self.model_name = self.config.get('model_name', 'unknown').lower()
+        self.storage.init(directory_name=self.model_name)
 
     def generate_task_dependencies(self, data_dags: Dict, task_dags: Dict, action_dags: Dict) -> Dict:
         """
@@ -23,42 +31,9 @@ class DAGMaker:
         It will return a dictionary of DAGs with their tasks and dependencies.
         Algo:
         """
-        dag_tasks = {}
-        logger.info(f"Actions dags: {action_dags}")
-        for task_config in self.config.get('tasks', []):
-            logger.info(f"Processing task config: {task_config}")
-            schedule = task_config.get('schedule')
-            is_enabled = task_config.get('enabled', True)
-            if not is_enabled:
-                continue
-            task_name = task_config.get('task_name')
-            task_instance = task_dags.get(task_name)
-            if task_instance is None:
-                continue
-            for data_source in task_config.get('data_sources', []):
-                logger.info(f"Linking data source: {data_source} to task: {task_name}")
-                data_dag = data_dags.get(data_source)
-                logger.info(f"Found data DAG: {data_dag} for source: {data_source}")
-                if data_dag is None:
-                    continue
-                data_processor_task = task_instance.get_data_processor_task()
-                logger.info(f"Generated data processor task: {data_processor_task} for task: {task_name}")
-                reader_tasks = data_dag.get_reader_tasks(
-                    apply_function_batch=data_processor_task
-                )
-                logger.info(f"Generated reader tasks: {reader_tasks} for data source: {data_source}")
-                for reader_task in reader_tasks.values():
-                    dag_key = f"{task_name}_{data_source}"
-                    if dag_key not in dag_tasks:
-                        dag_tasks[dag_key] = {
-                            'name': dag_key,
-                            'schedule': schedule,
-                            'tasks': []
-                        }
-                    dag_tasks[dag_key]['tasks'].append(
-                        [reader_task, task_instance.get_processor_task()])
-            # generate DAGs
-        logging.info(f"Generated DAG tasks: {dag_tasks}")
+        dag_tasks = []
+        dag_tasks = self.generate_data_task_dependencies(data_dags, task_dags)
+        dag_tasks = self.generate_task_action_dependencies(dag_tasks, action_dags)
         return dag_tasks
 
     def parse_source_types(self, data_configs: Dict) -> Dict:
@@ -69,12 +44,9 @@ class DAGMaker:
         source_types = data_configs['source_types']
         data_reader_tasks = {}
         for source in source_types:
-            if source['type'] == 'kafka':
-                data_reader_tasks[source['name']] = KafkaDataReader(
-                    conn_id=source['source_config']['conn_id'],
-                    topics=source['source_config']['topics'],
-                    max_messages=source.get('max_messages', 1000),
-                    poll_timeout=source.get('poll_timeout', 5)
+            data_reader_tasks[source['name']] = DataReaderOperator(
+                task_id=f"{source['name']}",
+                reader_config=source['config']
                 )
         return data_reader_tasks
 
@@ -98,11 +70,10 @@ class DAGMaker:
         task_configs = self.config.get('tasks', [])
         tasks_dags = {}
         for task in task_configs:
-            if task['type'] == 'data_checks':
-                tasks_dags[task['task_name']] = MissingDataTaskProcessor()
-            else:
-                # Handle other task types
-                pass
+            tasks_dags[task['name']] = TaskOperator(
+                task_id=f"{task['name']}",
+                processor_type=task.get('type', 'missing_data')
+            )
         logger.info(f"Parsed task DAGs: {tasks_dags}")
         return tasks_dags
 
@@ -111,7 +82,7 @@ class DAGMaker:
         This function will parse the actions from the config.
         It will return a dictionary of actions with their configurations.
         """
-        task_configs = self.config.get('tasks', [])
+        actions_configs = self.config.get('actions', [])
         action_dags = {}
         for task in task_configs:
             for action in task.get('actions', []):
@@ -143,6 +114,8 @@ class DAGMaker:
     def generate_dags(self):
         # Logic to create DAG based on self.config
         dag_id = f"{self.config.get('model_name', 'unknown').lower()}"
+        dag_name = f"{dag_id}_dag"
+        dag_schedule = self.config.get('schedule', '@daily')
         default_args = {
             'owner': 'airflow',
             'depends_on_past': False,
@@ -151,24 +124,15 @@ class DAGMaker:
             'retries': 1,
             'retry_delay': timedelta(minutes=5),
         }
-        dag_tasks = self.parse_configs()
-        dags = []
-        for dag_name, dag_dict in dag_tasks.items():
-            with DAG(
-                dag_id=dag_name,
-                default_args=default_args,
-                description=self.config.get('model_description', ''),
-                schedule=dag_dict['schedule'],
-                start_date=datetime(2024, 1, 1),
-                catchup=False,
-                tags=['radar', 'dynamic', 'python-class'],
-            ) as dag:
-                for task_chain in dag_dict.get('tasks', []):
-                    current_task = None
-                    for task in task_chain:
-                        logger.info(f"Adding task: {task} to DAG: {dag_name}")
-                        if current_task is not None:
-                            current_task >> task()
-                        current_task = task
-            dags.append(dag)
-        return dags
+        with DAG(
+            dag_id=dag_name,
+            default_args=default_args,
+            description=self.config.get('model_description', ''),
+            schedule=dag_schedule,
+            start_date=datetime(2024, 1, 1),
+            catchup=False,
+            tags=['radar', 'dynamic', 'python-class'],
+        ) as dag:
+            dag_tasks = self.parse_configs()
+            logger.info(f"Creating DAG: {dag_id} with tasks: {dag_tasks}")
+        return dag
