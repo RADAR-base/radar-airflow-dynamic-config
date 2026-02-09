@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 
 
 class TaskProcessor(ABC):
-    @abstractmethod
-    def get_processor_task(self, **kwargs):
+
+    def __init__(self):
         pass
 
     @abstractmethod
-    def get_data_processor_task(self, **kwargs):
+    def get_processor_task(self, **kwargs):
         pass

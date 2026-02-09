@@ -27,12 +27,18 @@ class ConditionParser:
 
 class ConditionOperator(BaseBranchOperator):
     # https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/dags.html#branching
-    def __init__(self, condition_parser: ConditionParser, *args, **kwargs):
+    def __init__(self, condition_str: str, action_name: str,
+                 intermediate_storage, data_key, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.condition_parser = condition_parser
+        self.action_name = action_name
+        self.condition_str = ConditionParser(condition_str=condition_str,
+                                             condition_name=action_name)
+        self.intermediate_storage = intermediate_storage
+        self.data_key = data_key
 
     def choose_branch(self, context):
-        if self.condition_parser.evaluate(context):
-            return self.condition_parser.condition_name + "_true_task"
+        data = self.intermediate_storage.load(self.data_key)
+        if self.condition_str.evaluate(data):
+            return self.action_name
         else:
-            return self.condition_parser.condition_name + "_false_task"
+            return None

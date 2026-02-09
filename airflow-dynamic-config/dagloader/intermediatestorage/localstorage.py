@@ -10,12 +10,12 @@ class LocalStorage(Storage):
         os.makedirs(self.base_path, exist_ok=True)
 
     def save(self, key: str, data: Any) -> None:
-        file_path = f"{self.base_path}/{self.directory_name}/{key}"
+        file_path = f"{self.base_path}/{self.directory_name}/{key}.pkl"
         with open(file_path, 'wb') as f:
-            pickle.dump(data, f)
+            pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
 
     def load(self, key: str) -> Any:
-        file_path = f"{self.base_path}/{self.directory_name}/{key}"
+        file_path = f"{self.base_path}/{self.directory_name}/{key}.pkl"
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"No data found for key: {key}")
         with open(file_path, 'rb') as f:

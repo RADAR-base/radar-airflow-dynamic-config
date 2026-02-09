@@ -46,7 +46,8 @@ class DAGMaker:
         for source in source_types:
             data_reader_tasks[source['name']] = DataReaderOperator(
                 task_id=f"{source['name']}",
-                reader_config=source['config']
+                reader_config=source['config'],
+                intermediate_storage=self.storage
                 )
         return data_reader_tasks
 
@@ -84,19 +85,25 @@ class DAGMaker:
         """
         actions_configs = self.config.get('actions', [])
         action_dags = {}
-        for task in task_configs:
-            for action in task.get('actions', []):
-                conditions_dags = []
-                for i, conditions in enumerate(action.get('conditions', [])):
-                    condition_parser = ConditionParser(
-                        condition_str=conditions,
-                        condition_name=f"{action.get('type',
-                        'default_condition')}_{i}"
-                    )
-                    conditions_dags.append(condition_parser)
-                if action['type'] == 'send_notification':
-                    conditions = action.get('conditions', {})
-        return action_dags
+        condition_dags = {}
+        for action in actions_configs:
+            action_name = action['name']
+            action_conditions = action.get('condition', '')
+            data_keys = action.get('depends_on', [])
+            condition_operator = ConditionOperator(
+                condition_str=action_conditions,
+                action_name=action_name,
+                intermediate_storage=self.storage,
+                task_id=f"{action_name}_branch",
+                data_key=f"{data_keys}"
+            )
+            condition_dags[action_name] = condition_operator
+            action_dags[action_name] = ActionOperator(
+                task_id=f"{action_name}",
+                action_config=action.get('config', {}),
+                intermediate_storage=self.storage
+            )
+        return action_dags, condition_dags
 
 
     def parse_configs(self) -> Dict:
@@ -106,9 +113,9 @@ class DAGMaker:
         """
         data_dags = self.parse_data_dags()
         task_dags = self.parse_tasks()
-        action_tasks = self.parse_actions_and_conditions()
-        logger.info(f"Action tasks: {action_tasks}")
-        dag_tasks = self.generate_task_dependencies(data_dags, task_dags, action_tasks)
+        action_dags, condition_dags = self.parse_actions_and_conditions()
+        logger.info(f"Action tasks: {action_dags}, Condition tasks: {condition_dags}")
+        dag_tasks = self.generate_task_dependencies(data_dags, task_dags, action_dags, condition_dags)
         return dag_tasks
 
     def generate_dags(self):

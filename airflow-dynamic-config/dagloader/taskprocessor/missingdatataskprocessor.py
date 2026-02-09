@@ -7,28 +7,21 @@ from datetime import datetime, timedelta
 import pandas as pd
 import os
 from typing import List, Any
-from airflow.sdk import task
 
 logger = logging.getLogger(__name__)
 
 
 class MissingDataTaskProcessor(TaskProcessor):
     def __init__(self):
-        self.INTERMEDIATE_PATH = "/tmp/missing_data_intermediate"
-        if not os.path.exists(self.INTERMEDIATE_PATH):
-            os.makedirs(self.INTERMEDIATE_PATH)
+        super().__init__()
 
     @staticmethod
-    @task
     def processor_task(**kwargs) -> Any:
-        INTERMEDIATE_PATH = "/tmp/missing_data_intermediate"
-        logger.info(f"directory exists: {os.listdir(INTERMEDIATE_PATH)}")
-        topic = kwargs.get('topic')
+        intermediate_storage = kwargs.get('intermediate_storage')
+        data_key = kwargs.get('source_name')
+        data = intermediate_storage.load(data_key)
         reports = []
-        df = pd.read_csv(os.path.join(
-                INTERMEDIATE_PATH,
-                f"last_data_point_{topic}.csv"
-            ))
+        df = pd.DataFrame(data)
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         reports = df[df['timestamp'] - pd.to_datetime(
             datetime.utcnow().isoformat()) < timedelta(minutes=15)

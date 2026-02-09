@@ -1,9 +1,10 @@
-import dagloader.taskprocessor.missingdatataskprocessor as MissingDataTaskProcessor
+from dagloader.taskprocessor.missingdatataskprocessor import MissingDataTaskProcessor
+from dagloader.taskprocessor.taskprocessor import TaskProcessor
 
 
 class TaskProcessorFactory:
     @staticmethod
-    def get_task_processor(processor_type: str) -> MissingDataTaskProcessor:
+    def get_task_processor(processor_type: str) -> TaskProcessor:
         if processor_type == 'data_checks':
             return MissingDataTaskProcessor()
         else:
