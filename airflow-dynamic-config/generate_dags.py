@@ -29,11 +29,12 @@ def load_all_dags():
     for config_file in config_files:
         try:
             dag_maker = DAGMaker(config_file)
-            dags_list = dag_maker.generate_dags()
+            dag = dag_maker.generate_dags()
+            dags_dict[dag.dag_id] = dag
             # Add each DAG to the dictionary with its dag_id as the key
-            for dag in dags_list:
-                dags_dict[dag.dag_id] = dag
-                logger.info(f"Loaded DAG: {dag.dag_id}")
+            #for dag in dags_list:
+            #    dags_dict[dag.dag_id] = dag
+           #     logger.info(f"Loaded DAG: {dag.dag_id}")
         except Exception as e:
             logger.error(f"Error parsing config {config_file}: {str(e)}")
             import traceback

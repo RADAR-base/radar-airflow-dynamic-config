@@ -27,18 +27,21 @@ class ConditionParser:
 
 class ConditionOperator(BaseBranchOperator):
     # https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/dags.html#branching
-    def __init__(self, condition_str: str, action_name: str,
-                 intermediate_storage, data_key, *args, **kwargs):
+    def __init__(self, intermediate_storage, action_config: dict, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.action_name = action_name
-        self.condition_str = ConditionParser(condition_str=condition_str,
-                                             condition_name=action_name)
+        self.action_name = action_config.get('name', None)
+        condition_str = action_config.get('condition', '')
+        self.condition_parser = ConditionParser(condition_str=condition_str,
+                                             condition_name=self.action_name)
         self.intermediate_storage = intermediate_storage
-        self.data_key = data_key
+        self.action_config = action_config
 
     def choose_branch(self, context):
-        data = self.intermediate_storage.load(self.data_key)
-        if self.condition_str.evaluate(data):
+        task_ids = self.action_config.get('depends_on', [])
+        data = {}
+        for data_key in task_ids:
+            data[data_key] = self.intermediate_storage.load(data_key)
+        if self.condition_parser.evaluate(data):
             return self.action_name
         else:
             return None

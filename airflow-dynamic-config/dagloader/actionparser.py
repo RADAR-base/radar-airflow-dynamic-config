@@ -3,46 +3,48 @@ from airflow.providers.apache.kafka.operators.produce import (
 )
 from airflow.sdk import BaseOperator
 
+
 class ActionParser:
     def __init__(self, actions: dict, output_topic: str = "output_topic", kafka_conn_id: str = "kafka_default"):
         self.actions = actions
+        self.action_name = actions.get('name', 'default_action')
+        self.action_type = actions.get('type', 'default_type')
+        self.action_config = actions.get('config', {})
         self.OUTPUT_TOPIC = output_topic
         self.KAFKA_CONN_ID = kafka_conn_id
 
-    def parse_actions(self):
-        parsed_actions = {}
-        for action_name, action_details in self.actions.items():
-            parsed_actions[action_name] = self.parse_single_action(action_name, action_details)
-        return parsed_actions
+    def parse_action(self):
+        return self.get_action_tasks(self.action_name, self.action_config)
 
-    def parse_single_action(self, action_name: str, action_details: dict):
-        # Implement parsing logic here
-        producer_function = self.get_producer_function(action_details)
-        return  self.get_action_tasks(action_name, action_details, producer_function)
-
-    def get_action_tasks(self, action_name, action_details, producer_function):
+    def get_action_tasks(self, data):
         publish_task = ProduceToTopicOperator(
-            task_id=action_name,
+            task_id=f"{self.action_name}_publish",
             topic=self.OUTPUT_TOPIC,
             kafka_config_id=self.KAFKA_CONN_ID,
-            producer_function=producer_function,
+            producer_function=self.get_producer_function(self.action_type,
+                                                         self.action_config)
         )
         return publish_task
 
-    def get_producer_function(self, action_details):
-        def producer_function(**context):
+    @staticmethod
+    def get_producer_function(action_type, action_config):
+        def producer_function(data):
             # Example producer function logic
-            report = {"action": action_details.get("type", "default_action"), "status": "completed"}
+            report = {"action": action_config.get("type", "default_action"), "status": "completed"}
             return report
         return producer_function
 
 
 class ActionOperator(BaseOperator):
-    def __init__(self, actions: dict, *args, **kwargs):
+    def __init__(self, action_config: dict, intermediate_storage, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.action_parser = ActionParser(actions)
-        self.parsed_actions = self.action_parser.parse_actions()
+        self.intermediate_storage = intermediate_storage
+        self.action_parser = ActionParser(action_config)
+        #self.parsed_action = self.action_parser.parse_action()
+        self.keys = action_config.get('depends_on', [])
 
     def execute(self, context):
-        for action_name, action_task in self.parsed_actions.items():
-            action_task.execute(context)
+        data = {}
+        for key in self.keys:
+            data[key] = self.intermediate_storage.load(key)
+        self.parsed_action.get_action_tasks(data)()
