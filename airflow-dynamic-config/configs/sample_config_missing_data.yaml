@@ -14,7 +14,7 @@ data:
       config:
         conn_id: kafka_staging
         topics:
-          - wearable_heart_rate
+          - wearable-device-data
 tasks:
   - name: missing_data_check_1
     type: data_checks

@@ -1,4 +1,5 @@
-import dagloader.datareader.kafkadatareader as KafkaDataReader
+from dagloader.datareader.kafkadatareader import KafkaDataReader
+
 
 class DataReaderFactory:
     @staticmethod

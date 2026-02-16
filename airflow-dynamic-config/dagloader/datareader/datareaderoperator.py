@@ -1,5 +1,5 @@
 from airflow.sdk import BaseOperator
-import dagloader.datareader.datareaderfactory as DataReaderFactory
+from dagloader.datareader.datareaderfactory import DataReaderFactory
 
 
 class DataReaderOperator(BaseOperator):
@@ -11,10 +11,10 @@ class DataReaderOperator(BaseOperator):
         self.intermediate_storage = intermediate_storage
         self.source_name = source_config.get('name')
         self.source_type = source_config.get('type')
+        self.source_config = source_config.get('config', {})
 
     def execute(self, context):
-        reader_config = self.data_config.get('data', {})
         reader = DataReaderFactory.get_data_reader(self.source_type,
-                                                   **reader_config)
+                                                   **self.source_config)
         data = reader.read_data()
         self.intermediate_storage.save(self.source_name, data)

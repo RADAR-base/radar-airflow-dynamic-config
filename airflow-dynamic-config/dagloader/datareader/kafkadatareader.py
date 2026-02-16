@@ -1,7 +1,5 @@
 from dagloader.datareader.datareader import DataReader
-from airflow.providers.apache.kafka.operators.consume import (
-    ConsumeFromTopicOperator
-)
+from airflow.providers.apache.kafka.hooks.consume import KafkaConsumerHook
 import json
 from typing import List, Dict, Any
 
@@ -12,46 +10,47 @@ logger = logging.getLogger(__name__)
 class KafkaDataReader(DataReader):
     def __init__(self, conn_id: str, topics: list, max_messages=1000, poll_timeout=5):
         self.conn_id = conn_id
-        self.topics = topics
+        self.topics = topics if isinstance(topics, list) else [topics]
         self.max_messages = max_messages
         self.poll_timeout = poll_timeout
 
-    def get_reader_task(self, topic):
-        safe_topic_name = topic.replace('-', '_')
-        # Consume from Kafka using provider operator
-        consume_task = ConsumeFromTopicOperator(
-            task_id=f"consume_{safe_topic_name}",
-            topics=[topic],
-            apply_function_batch=self.process_consumed_messages,
-            apply_function_kwargs={'topic': topic},
-            kafka_config_id=self.conn_id,
-            max_messages=self.max_messages,
-            poll_timeout=self.poll_timeout,
-        )
-        return consume_task
-
-    def get_reader_tasks(self):
-        tasks = {}
+    def read_data(self):
+        logger.info(f"Reading data from Kafka topics: {self.topics}")
+        data = {}
         for topic in self.topics:
-            task = self.get_reader_task(topic)
-            tasks[topic] = task
-        return tasks
+            logger.info(f"Consuming messages from topic: {topic}")
+            data[topic] = self._consume_topic(topic)
+        return data
 
-    @staticmethod
-    def process_consumed_messages(messages: List, topic: str) -> Dict[str, Any]:
-        logger.info(f"Processing {len(messages)} messages from topic: {topic}")
+    def _consume_topic(self, topic: str) -> List[Dict[str, Any]]:
+        """Consume messages from a single Kafka topic using KafkaConsumerHook."""
+        hook = KafkaConsumerHook(
+            topics=[topic],
+            kafka_config_id=self.conn_id,
+        )
+        consumer = hook.get_consumer()
         message_values = []
-        for msg in messages:
-            try:
-                if isinstance(msg, dict):
-                    message_values.append(msg)
-                elif hasattr(msg, 'value'):
+        try:
+            messages = consumer.consume(
+                num_messages=self.max_messages,
+                timeout=self.poll_timeout,
+            )
+            for msg in messages:
+                if msg.error():
+                    logger.warning(f"Consumer error on topic {topic}: {msg.error()}")
+                    continue
+                try:
                     value = msg.value()
-                    if isinstance(value, (str, bytes)):
+                    if value is not None:
+                        if isinstance(value, bytes):
+                            value = value.decode('utf-8')
                         message_values.append(json.loads(value))
-                    else:
-                        message_values.append(value)
-            except Exception as e:
-                logger.warning(f"Error processing message: {e}")
-                continue
+                except Exception as e:
+                    logger.warning(f"Error processing message from {topic}: {e}")
+                    continue
+            logger.info(
+                f"Consumed {len(message_values)} messages from topic: {topic}"
+            )
+        finally:
+            consumer.close()
         return message_values
