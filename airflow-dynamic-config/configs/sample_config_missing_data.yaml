@@ -27,9 +27,20 @@ tasks:
       backoff: "2 days"
 
 actions:
-  - name: notify_on_missing_data
+  - name: notify_missing_data
     type: "send_notification"
     condition: "missing_data_check_1.participants_id != []"
     depends_on:
       - missing_data_check_1
-    config: []
+    config:
+      time: "5 minutes"
+      message: "Missing data detected for participants: {{ missing_data_check_1.participants_id }}"
+
+  - name: schedule_followup_questionnaire
+    type: "send_questionnaire"
+    condition: "missing_data_check_1.participants_id != []"
+    depends_on:
+      - missing_data_check_1
+    config:
+      time: "10 minutes"
+      questionnaire_id: "missing_data_followup"

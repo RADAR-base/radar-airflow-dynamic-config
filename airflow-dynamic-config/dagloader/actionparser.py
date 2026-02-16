@@ -36,7 +36,8 @@ class ActionParser:
 
 
 class ActionOperator(BaseOperator):
-    def __init__(self, action_config: dict, intermediate_storage, *args, **kwargs):
+    def __init__(self, action_config: dict, intermediate_storage,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.intermediate_storage = intermediate_storage
         self.action_parser = ActionParser(action_config)
