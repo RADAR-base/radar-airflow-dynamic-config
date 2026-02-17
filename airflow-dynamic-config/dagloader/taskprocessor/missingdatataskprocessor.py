@@ -18,7 +18,17 @@ class MissingDataTaskProcessor(TaskProcessor):
 
     def execute(self, data, **kwargs) -> Any:
         reports = []
-        df = pd.DataFrame(data)
+        logger.info(f"Processing missing data task with data: {data}")
+        dfs = []
+        for data_sources in data.values():
+            for topic, topic_data in data_sources.items():
+                logger.info(f"Processing topic: {topic}, data: {topic_data}")
+                df = pd.DataFrame(topic_data)
+                logger.info(f"Data converted to DataFrame: {df}")
+                dfs.append(df)
+        df = pd.concat(dfs, ignore_index=True)
+        logger.info(f"Concatenated DataFrame: {df}")
+        logger.info(f"Data converted to DataFrame: {df}")
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         reports = df[df['timestamp'] - pd.to_datetime(
             datetime.utcnow().isoformat()) < timedelta(minutes=15)
