@@ -35,4 +35,6 @@ class MissingDataTaskProcessor(TaskProcessor):
                      ]['user_id'].tolist()
         logger.info(f"Collected {len(reports)} reports for topic: {topic}")
         logger.info(f"Report: {reports}")
-        return reports
+        report_dict = {}
+        report_dict['participants_id'] = reports
+        return report_dict

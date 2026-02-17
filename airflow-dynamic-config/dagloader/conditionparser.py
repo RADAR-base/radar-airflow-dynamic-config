@@ -1,5 +1,7 @@
 import rule_engine as re
 from airflow.providers.standard.operators.branch import BaseBranchOperator
+import logging
+logger = logging.getLogger(__name__)
 
 
 class ConditionParser:
@@ -41,6 +43,7 @@ class ConditionOperator(BaseBranchOperator):
         data = {}
         for data_key in task_ids:
             data[data_key] = self.intermediate_storage.load(data_key)
+            logger.info(f"Loaded data for key '{data_key}': {data[data_key]}")
         if self.condition_parser.evaluate(data):
             return self.action_name
         else:
