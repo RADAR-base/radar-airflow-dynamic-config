@@ -17,7 +17,8 @@ class DAGMaker:
     def __init__(self, config_path: str):
         self.config_loader = ConfigLoader(config_path)
         self.config = self.config_loader.get_config()
-        intermediate_storage_config = self.config.get('intermediate_results_storage', {})
+        intermediate_storage_config = self.config.get(
+            'intermediate_results_storage', {})
         self.storage = StorageFactory.get_storage(
             storage_type=intermediate_storage_config.get('type', 'local'),
             **intermediate_storage_config.get('config', {})
@@ -25,9 +26,10 @@ class DAGMaker:
         self.model_name = self.config.get('model_name', 'unknown').lower()
         self.storage.init(directory_name=self.model_name)
 
-    def generate_data_task_dependencies(self, data_dags: Dict, task_dags: Dict) -> Dict:
+    def generate_data_task_dependencies(self, data_dags: Dict,
+                                        task_dags: Dict) -> Dict:
         """
-        This function will generate task dependencies for data tasks and processing tasks.
+        This function will generate task dependenciesfor data tasksand processing tasks.
         It will return a dictionary of DAGs with their tasks and dependencies.
         """
         dag_tasks = {}
@@ -67,11 +69,14 @@ class DAGMaker:
                 if key in dag_tasks:
                     dag_tasks[key] >> action_task
                 else:
-                    logger.warning(f"Dependency '{key}' not found for action '{action_name}'")
+                    logger.warning(
+                        f"Dependency '{key}' not found for action '{action_name}'")
 
         return dag_tasks
 
-    def generate_condition_action_dependencies(self, dag_tasks: Dict, condition_dags: Dict, action_dags: Dict) -> Dict:
+    def generate_condition_action_dependencies(self, dag_tasks: Dict,
+                                               condition_dags: Dict,
+                                               action_dags: Dict) -> Dict:
         """
         This function will generate conditional dependencies between tasks, conditions, and actions.
         It sets up branch operators that evaluate conditions and route to actions accordingly.

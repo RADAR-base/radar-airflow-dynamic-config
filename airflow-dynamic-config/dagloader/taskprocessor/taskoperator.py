@@ -8,12 +8,14 @@ class TaskOperator(BaseOperator):
         self.intermediate_storage = intermediate_storage
         self.task_config = task_config
         self.task_processor = TaskProcessorFactory.get_task_processor(
-            processor_type=self.task_config.get('type', 'missing_data'))
+            processor_type=self.task_config.get('type', 'missing_data'),
+            intermediate_storage=self.intermediate_storage
+        )
         self.task_data_sources = self.task_config.get('data_sources', [])
 
     def execute(self, context):
         data = {}
         for data_key in self.task_data_sources:
             data[data_key] = self.intermediate_storage.load(data_key)
-        result = self.task_processor.get_processor_task(data=data)
+        result = self.task_processor.execute(data=data)
         self.intermediate_storage.save(self.task_config.get('name'), result)

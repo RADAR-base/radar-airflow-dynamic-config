@@ -1,6 +1,7 @@
 from dagloader.datareader.datareader import DataReader
 import pandas as pd
 
+
 class LocalCSVDataReader(DataReader):
     def __init__(self, file_paths: list):
         self.file_paths = file_paths
