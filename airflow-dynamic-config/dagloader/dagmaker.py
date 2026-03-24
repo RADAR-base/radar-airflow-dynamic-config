@@ -53,7 +53,8 @@ class DAGMaker:
                     logger.warning(f"Data source '{data_source}' not found for task '{task_name}'")
         return dag_tasks
 
-    def generate_task_action_dependencies(self, dag_tasks: Dict, action_dags: Dict) -> Dict:
+    def generate_task_action_dependencies(self, dag_tasks: Dict, 
+                                          action_dags: Dict) -> Dict:
         """
         This function will generate dependencies between tasks and actions.
         It will return the updated dictionary of DAGs with action tasks and dependencies.
