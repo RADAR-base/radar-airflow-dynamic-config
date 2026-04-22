@@ -23,10 +23,12 @@ tasks:
       - type: "send_notification"
         conditions:
           - "anomaly_detection.participants_id.is_anomaly == true"
-        config: []
-      - type: "alert"
         config:
-          method: "email"
-      - type: "alert"
+          notification_schedule_time: "{{ timedelta(minutes=5) }}"
+          notification_text: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"
+      - type: "email_alert"
         config:
-          method: "api_request"
+          recipients:
+            - "xyz@gmail.com"
+          subject: "Heart Rate Spike Detected"
+          body: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"

@@ -32,8 +32,8 @@ actions:
     condition: "missing_data_check_1.participants_id != []"
     depends_on:
       - missing_data_check_1
+    time: "immediate"
     config:
-      time: "5 minutes"
       message: "Missing data detected for participants: {{ missing_data_check_1.participants_id }}"
 
   - name: schedule_followup_questionnaire
@@ -41,6 +41,6 @@ actions:
     condition: "missing_data_check_1.participants_id != []"
     depends_on:
       - missing_data_check_1
+    time: "8:30pm"
     config:
-      time: "10 minutes"
       questionnaire_id: "missing_data_followup"
