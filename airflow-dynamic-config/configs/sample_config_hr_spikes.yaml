@@ -1,0 +1,34 @@
+model_name: sample_anomaly_detection  # No model needed
+model_description: Sample config to demonstrate heart rate spikes detection
+data:
+  project: STAGING_PROJECT
+  source_types:
+    - type: kafka
+      name: wearable_heart_rate_kafka
+      source_config:
+        conn_id: kafka_staging
+        topics:
+          - wearable_heart_rate
+tasks:
+  - task_name: anomaly_detection
+    type: custom_task
+    enabled: true
+    data_sources:
+      - wearable_heart_rate_kafka
+    schedule: "* 5 * * *"
+    path: /sample_anomaly_detection/STAGING_PROJECT/spike_detection.py
+    params:
+      threshold: 200  # Heart rate threshold for spike detection
+    actions:
+      - type: "send_notification"
+        conditions:
+          - "anomaly_detection.participants_id.is_anomaly == true"
+        config:
+          notification_schedule_time: "{{ timedelta(minutes=5) }}"
+          notification_text: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"
+      - type: "email_alert"
+        config:
+          recipients:
+            - "xyz@gmail.com"
+          subject: "Heart Rate Spike Detected"
+          body: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"

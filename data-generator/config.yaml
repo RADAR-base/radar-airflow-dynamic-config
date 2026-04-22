@@ -1,0 +1,56 @@
+# Kafka Data Generator Configuration
+
+kafka:
+  bootstrap_servers:
+    - "kafka-1:9092"
+    - "kafka-2:9092"
+    - "kafka-3:9092"
+  retries: 3
+  batch_size: 16384
+  linger_ms: 10
+  acks: "all"
+
+# Generator configurations
+generators:
+  - data_type: "users"
+    topic: "user-events"
+    interval: 2.0
+    enabled: false
+    missing_data_percentage: 10  # Percentage of time there will be missing data (0-100)
+    # count: 1000  # Optional: limit number of messages
+
+  - data_type: "transactions"
+    topic: "transaction-events"
+    interval: 1.5
+    enabled: false
+    missing_data_percentage: 40
+
+  - data_type: "iot_sensors"
+    topic: "iot-sensor-data"
+    interval: 0.5
+    enabled: false
+    missing_data_percentage: 90
+
+  - data_type: "clickstream"
+    topic: "web-clickstream"
+    interval: 0.8
+    enabled: false
+    missing_data_percentage: 2
+
+  - data_type: "logs"
+    topic: "application-logs"
+    interval: 1.0
+    enabled: false
+    missing_data_percentage: 10
+
+  - data_type: "wearable_data"
+    topic: "wearable-device-data"
+    interval: 1.0
+    enabled: true
+    missing_data_percentage: 0
+    # Additional custom configuration can be added here
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

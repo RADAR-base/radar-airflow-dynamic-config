@@ -1,0 +1,243 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://radar-base.org/schemas/airflow-dynamic-config.json",
+  "title": "RADAR ML Airflow Dynamic DAG Configuration",
+  "description": "Schema for defining dynamic Airflow DAGs for RADAR ML pipelines",
+  "type": "object",
+  "required": ["model_name", "model_description", "data", "tasks"],
+  "additionalProperties": false,
+  "properties": {
+    "model_name": {
+      "type": "string",
+      "description": "Unique identifier for the model/pipeline",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "model_description": {
+      "type": "string",
+      "description": "Human-readable description of the model/pipeline purpose"
+    },
+    "data": {
+      "type": "object",
+      "description": "Data source configuration",
+      "required": ["project"],
+      "properties": {
+        "project": {
+          "type": "string",
+          "description": "Project identifier (e.g., STAGING_PROJECT, PROD_PROJECT)"
+        },
+        "source_type": {
+          "type": "string",
+          "description": "Single data source type (deprecated, use source_types)",
+          "enum": ["kafka", "timescaledb"]
+        },
+        "source_types": {
+          "type": "array",
+          "description": "Multiple data source configurations",
+          "items": {
+            "type": "object",
+            "required": ["type", "name", "source_config"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["kafka", "timescaledb"]
+              },
+              "name": {
+                "type": "string",
+                "description": "Unique name for this data source"
+              },
+              "source_config": {
+                "type": "object",
+                "description": "Source-specific configuration"
+              }
+            }
+          }
+        },
+        "source_config": {
+          "type": "object",
+          "description": "Configuration for single source type",
+          "properties": {
+            "conn_id": {
+              "type": "string",
+              "description": "Airflow connection ID"
+            },
+            "topics": {
+              "type": "array",
+              "description": "Kafka topics to consume from",
+              "items": {
+                "type": "string"
+              }
+            },
+            "tables": {
+              "type": "array",
+              "description": "Database tables to query",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "description": "List of tasks to execute in the pipeline",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["task_name", "type", "enabled"],
+        "properties": {
+          "task_name": {
+            "type": "string",
+            "description": "Unique identifier for the task",
+            "pattern": "^[a-zA-Z0-9_-]+$"
+          },
+          "type": {
+            "type": "string",
+            "description": "Type of task to execute",
+            "enum": ["custom_task", "data_checks", "ml_inference", "ml_training"]
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether the task is active"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Cron expression for task scheduling"
+          },
+          "depends_on": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "description": "Task dependencies (task_name or list of task_names)"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to the custom task script or GitHub repository"
+          },
+          "repo_config": {
+            "type": "object",
+            "description": "GitHub repository configuration for external code",
+            "properties": {
+              "file_path": {
+                "type": "string",
+                "description": "Path to the script within the repository"
+              },
+              "branch": {
+                "type": "string",
+                "description": "Git branch to use",
+                "default": "main"
+              },
+              "auth_type": {
+                "type": "string",
+                "enum": ["ssh", "https", "token"],
+                "description": "Authentication method"
+              },
+              "token_conn_id": {
+                "type": "string",
+                "description": "Airflow connection ID for authentication credentials"
+              }
+            }
+          },
+          "params": {
+            "type": "object",
+            "description": "Task-specific parameters",
+            "additionalProperties": true
+          },
+          "checks": {
+            "type": "array",
+            "description": "Data quality checks (for data_checks task type)",
+            "items": {
+              "type": "object",
+              "required": ["type", "name"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["missing_data", "data_quality", "schema_validation"]
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Unique name for the check"
+                },
+                "topic": {
+                  "type": "string",
+                  "description": "Kafka topic to check"
+                },
+                "table": {
+                  "type": "string",
+                  "description": "Database table to check"
+                },
+                "window": {
+                  "type": "string",
+                  "description": "Time window for the check (e.g., '3 days', '1 hour')"
+                },
+                "threshold": {
+                  "type": "number",
+                  "description": "Threshold value for the check"
+                }
+              }
+            }
+          },
+          "actions": {
+            "type": "array",
+            "description": "Actions to execute based on task results",
+            "items": {
+              "type": "object",
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["send_notification", "alert", "write_to_kafka", "write_to_db", "custom_action"]
+                },
+                "output_rule": {
+                  "type": "array",
+                  "description": "Conditions for triggering the action",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "config": {
+                  "oneOf": [
+                    {
+                      "type": "array"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "method": {
+                          "type": "string",
+                          "description": "Alert method (email, api_request, slack, etc.)"
+                        },
+                        "topic": {
+                          "type": "string",
+                          "description": "Kafka topic for data writing"
+                        },
+                        "table": {
+                          "type": "string",
+                          "description": "Database table for data writing"
+                        },
+                        "endpoint": {
+                          "type": "string",
+                          "description": "API endpoint for notifications"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  ],
+                  "description": "Action-specific configuration"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

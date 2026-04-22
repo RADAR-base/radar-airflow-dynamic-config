@@ -1,0 +1,46 @@
+model_name: sample_missing_data  # No model needed
+model_description: Sample config to demonstrate missing data checks
+schedule: "0 8 * * *"
+intermediate_results_storage:
+  type: local
+  config:
+    path: ./data/intermediate_results
+
+data:
+  project: STAGING_PROJECT
+  source_types:
+    - type: kafka
+      name: wearable_heart_rate_kafka
+      config:
+        conn_id: kafka_staging
+        topics:
+          - wearable-device-data
+tasks:
+  - name: missing_data_check_1
+    type: data_checks
+    data_sources:
+      - wearable_heart_rate_kafka
+    enabled: true
+    params:
+      window: "3 days"
+      threshold: 1 # all the data missing in the window
+      backoff: "2 days"
+
+actions:
+  - name: notify_missing_data
+    type: "send_notification"
+    condition: "missing_data_check_1.participants_id != []"
+    depends_on:
+      - missing_data_check_1
+    time: "immediate"
+    config:
+      message: "Missing data detected for participants: {{ missing_data_check_1.participants_id }}"
+
+  - name: schedule_followup_questionnaire
+    type: "send_questionnaire"
+    condition: "missing_data_check_1.participants_id != []"
+    depends_on:
+      - missing_data_check_1
+    time: "8:30pm"
+    config:
+      questionnaire_id: "missing_data_followup"
