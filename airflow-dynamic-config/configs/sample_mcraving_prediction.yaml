@@ -1,0 +1,43 @@
+model_name: Craving Prediction model
+model_description: Sample config to demonstrate craving prediction model
+schedule: "*/10 * * * *" # every 10 mins 
+intermediate_results_storage:
+  type: SQL
+  config:
+    conn_id: timescale_staging
+    database: intermediate_results_db
+    table_prefix: craving_data
+
+data:
+  project: STAGING_PROJECT
+  source_types:
+    - type: kafka
+      name: mcraving_empatica_data
+      config:
+        conn_id: kafka_staging
+        topics:
+          - s3-source-kafka
+tasks:
+  - name: preprocessing_task
+    type: custom
+    data_sources:
+      - mcraving_empatica_data
+    enabled: true
+    path: custom/mcraving_pipeline/preprocessing.py
+
+  - name: craving_prediction_task
+    type: custom
+    data_sources:
+      - preprocessing_task
+    enabled: true
+    path: custom/mcraving_pipeline/prediction.py
+
+actions:
+  - name: notify_participants
+    type: "send_notification"
+    condition: "craving_prediction_task.participants_id != []"
+    depends_on:
+      - craving_prediction_task
+    time: "immediate"
+    config:
+      message: "Missing data detected for participants: {{ craving_prediction_task.participants_id }}"

@@ -1,10 +1,17 @@
 model_name: sample_missing_data  # No model needed
 model_description: Sample config to demonstrate missing data checks
 schedule: "0 8 * * *"
+#intermediate_results_storage:
+#  type: local
+#  config:
+#    path: ./data/intermediate_results
+
 intermediate_results_storage:
-  type: local
+  type: sql
   config:
-    path: ./data/intermediate_results
+    conn_id: postgres_staging
+    database: intermediate_results_db
+    table_prefix: missing_data_checks
 
 data:
   project: STAGING_PROJECT
