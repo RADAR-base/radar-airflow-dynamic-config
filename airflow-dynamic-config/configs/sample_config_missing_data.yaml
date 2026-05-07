@@ -36,7 +36,8 @@ tasks:
 actions:
   - name: notify_missing_data
     type: "send_notification"
-    condition: "missing_data_check_1.participants_id != []"
+    filter_list_key: "missing_data_check_1"
+    condition: "missing_data_check_1.participants_id"
     depends_on:
       - missing_data_check_1
     time: "immediate"

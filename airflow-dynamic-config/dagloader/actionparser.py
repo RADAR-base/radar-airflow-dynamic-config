@@ -129,7 +129,7 @@ class ActionOperator(BaseOperator):
         super().__init__(*args, **kwargs)
         self.intermediate_storage = intermediate_storage
         self.action_parser = ActionParser(action_config)
-        self.keys = action_config.get('depends_on', [])
+        self.key = action_config.get('name', []) + "_condition"
         self.writer = KafkaWriter(
             topic=self.action_parser.OUTPUT_TOPIC,
             kafka_conn_id=self.action_parser.KAFKA_CONN_ID
@@ -141,18 +141,37 @@ class ActionOperator(BaseOperator):
             f"of type: {self.action_parser.action_type}"
         )
         data = {}
-        for key in self.keys:
-            data[key] = self.intermediate_storage.load(key)
+        data[self.key] = self.intermediate_storage.load(self.key)
         logger.info(
             f"Data loaded for action {self.action_parser.action_name}: {data}"
         )
-        report = self.action_parser.producer_function(data)
-        logger.info(
-            f"Action {self.action_parser.action_name} "
-            f"produced report: {report}"
-        )
-        self.writer.write(str(report))
-        logger.info(
-            f"Report for action {self.action_parser.action_name} "
-            f"sent to Kafka topic: {self.writer.topic}"
-        )
+        if data[self.key] is None:
+            logger.warning(
+                f"No data found for key '{self.key}' in action "
+                f"{self.action_parser.action_name}. Action will be skipped."
+            )
+
+        elif isinstance(data[self.key], list):
+            for datum in data[self.key]:
+                single_data = datum
+                report = self.action_parser.producer_function(single_data)
+                logger.info(
+                    f"Action {self.action_parser.action_name} "
+                    f"produced report: {report}"
+                )
+                self.writer.write(str(report))
+                logger.info(
+                    f"Report for action {self.action_parser.action_name} "
+                    f"sent to Kafka topic: {self.writer.topic}"
+                )
+        else:
+            report = self.action_parser.producer_function(data)
+            logger.info(
+                f"Action {self.action_parser.action_name} "
+                f"produced report: {report}"
+            )
+            self.writer.write(str(report))
+            logger.info(
+                f"Report for action {self.action_parser.action_name} "
+                f"sent to Kafka topic: {self.writer.topic}"
+            )

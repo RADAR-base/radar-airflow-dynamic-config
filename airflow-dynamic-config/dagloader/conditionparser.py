@@ -38,13 +38,35 @@ class ConditionOperator(BaseBranchOperator):
         self.intermediate_storage = intermediate_storage
         self.action_config = action_config
 
+
     def choose_branch(self, context):
         task_ids = self.action_config.get('depends_on', [])
         data = {}
         for data_key in task_ids:
             data[data_key] = self.intermediate_storage.load(data_key)
             logger.info(f"Loaded data for key '{data_key}': {data[data_key]}")
-        if self.condition_parser.evaluate(data):
-            return self.action_name
+        filter_list_key = self.action_config.get('filter_list_key')
+        if filter_list_key and filter_list_key in data:
+            elements = data[filter_list_key]
+            if not isinstance(elements, list):
+                elements = [elements]
+            matched_elements = []
+            for el in elements:
+                # Merge the context so other dependencies are accessible.
+                # The element replaces the list temporarily for evaluation.
+                eval_context = data.copy()
+                eval_context[filter_list_key] = el
+                if self.condition_parser.evaluate(eval_context):
+                    matched_elements.append(el)
+            if matched_elements:
+                storage_key = self.action_name + "_condition"
+                self.intermediate_storage.save(storage_key, matched_elements)
+                logger.info(f"Filtered {len(matched_elements)} elements and saved to '{storage_key}'")
+                return self.action_name
+            else:
+                return None
         else:
-            return None
+            if self.condition_parser.evaluate(data):
+                return self.action_name
+            else:
+                return None

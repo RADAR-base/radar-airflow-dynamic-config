@@ -22,7 +22,11 @@ def load_all_dags():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     configs_dir = os.path.join(current_dir, 'configs')
     #config_files = glob.glob(os.path.join(configs_dir, '*.yaml'))
-    config_files = glob.glob(os.path.join(configs_dir, 'sample_config_missing_data.yaml'))
+    config_files = glob.glob(os.path.join(configs_dir,
+                                          'sample_config_missing_data.yaml')
+                             ) + glob.glob(
+                                 os.path.join(configs_dir,
+                                              'sample_mcraving_prediction.yaml'))
     logger.info(f"Looking for config files in: {configs_dir}")
     logger.info(f"Found config files: {config_files}")
     dags_dict = {}
