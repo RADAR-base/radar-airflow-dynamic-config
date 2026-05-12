@@ -16,6 +16,18 @@ class TaskOperator(BaseOperator):
         self.task_data_sources = self.task_config.get('data_sources', [])
 
     def execute(self, context):
+        # Update task_config from runtime parameters if available
+        runtime_tasks = context['params'].get('tasks', [])
+        runtime_config = next((t for t in runtime_tasks if t.get('name') == self.task_config.get('name')), self.task_config)
+        self.task_config = runtime_config
+        self.task_data_sources = self.task_config.get('data_sources', [])
+        # Re-initialize processor with updated config
+        self.task_processor = TaskProcessorFactory.get_task_processor(
+            processor_type=self.task_config.get('type', 'missing_data'),
+            intermediate_storage=self.intermediate_storage,
+            task_config = self.task_config
+        )
+
         data = {}
         for data_key in self.task_data_sources:
             data[data_key] = self.intermediate_storage.load(data_key)
