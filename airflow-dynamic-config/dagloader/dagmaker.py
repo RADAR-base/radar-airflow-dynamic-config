@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import logging
 from dagloader.configloader import ConfigLoader
 from airflow import DAG
+from dagloader.parammaker import ParamMaker
 from dagloader.datareader.datareaderoperator import DataReaderOperator
 from dagloader.taskprocessor.taskoperator  import TaskOperator
 from dagloader.intermediatestorage.storagefactory import StorageFactory
@@ -25,6 +26,7 @@ class DAGMaker:
         )
         self.model_name = self.config.get('model_name', 'unknown').lower()
         self.storage.init(directory_name=self.model_name)
+        self.param_maker = ParamMaker(self.config)
 
     def generate_data_task_dependencies(self, data_dags: Dict,
                                         task_dags: Dict) -> Dict:
@@ -219,6 +221,9 @@ class DAGMaker:
             'retries': 1,
             'retry_delay': timedelta(minutes=5),
         }
+        dag_params = self.param_maker.generate_params()
+        logger.info(f"Creating DAG with ID: {dag_id}, Schedule: {dag_schedule}, Params: {dag_params}")
+        logger.info(f"task DAG params: {dag_params}")
         with DAG(
             dag_id=dag_name,
             default_args=default_args,
@@ -227,6 +232,7 @@ class DAGMaker:
             start_date=datetime(2024, 1, 1),
             catchup=False,
             tags=['radar', 'dynamic', 'python-class'],
+            params=dag_params,
         ) as dag:
             dag_tasks = self.parse_configs()
             logger.info(f"Creating DAG: {dag_id} with tasks: {dag_tasks}")
