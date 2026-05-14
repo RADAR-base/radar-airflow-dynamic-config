@@ -1,6 +1,11 @@
 model_name: sample_machine_learning_task  # No model needed
 model_description: Sample config to demonstrate machine learning tasks
 schedule: "0 8 * * *"
+intermediate_results_storage:
+  type: local
+  config:
+    path: /tmp/intermediate_results
+
 data:
   - name: wearable_heart_rate_kafka
     type: kafka
@@ -17,7 +22,7 @@ data:
 
 tasks:
   - name: training_ml_model
-    type: ml_training
+    type: custom
     enabled: true
     path: github.com/radar-base/radar-ml
     branch: main
@@ -34,7 +39,7 @@ tasks:
       - data_processing
 
   - name: data_processing
-    type: custom_task
+    type: custom
     enabled: true
     path: /data_processing/sample_project/data_cleaning.py
     branch: main
@@ -43,3 +48,13 @@ tasks:
     depends_on:
       - wearable_heart_rate_kafka
       - wearable_heart_rate_timescaledb
+
+actions:
+  - name: upload_weights_to_mlflow
+    type: "mlflow_upload"
+    condition: "training_ml_model.status == 'success'"
+    config:
+      time: "immediate"
+      message: "Model training completed successfully!"
+    depends_on:
+      - training_ml_model

@@ -9,30 +9,28 @@ intermediate_results_storage:
     table_prefix: craving_data
 
 data:
-  project: STAGING_PROJECT
-  source_types:
-    - type: kafka
-      name: mcraving_empatica_data
-      config:
-        conn_id: kafka_staging
-        topics:
-          - wearable-device-data
+  - name: mcraving_empatica_data
+    type: kafka
+    config:
+      conn_id: kafka_staging
+      project: STAGING_PROJECT
+      topics:
+        - wearable-device-data
+
 tasks:
   - name: preprocessing_task
     type: custom
-    data_sources:
-      - mcraving_empatica_data
     enabled: true
     path: custom/mcraving_pipeline/preprocessing.py
+    depends_on:
+      - mcraving_empatica_data
 
   - name: craving_prediction_task
     type: custom
-    data_sources:
-      - preprocessing_task
     enabled: true
+    path: custom/mcraving_pipeline/prediction.py
     depends_on:
       - preprocessing_task
-    path: custom/mcraving_pipeline/prediction.py
 
 actions:
   - name: notify_participants

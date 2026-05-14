@@ -3,6 +3,7 @@ numpy
 pandas
 scikit-learn
 apache-airflow-providers-apache-kafka
+apache-airflow-providers-amazon
 apache-airflow
 pykwalify
 rule-engine

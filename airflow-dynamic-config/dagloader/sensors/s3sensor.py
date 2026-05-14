@@ -7,8 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class S3SensorOperator(ConfigurableSensorOperator):
-    def __init__(self, sensor_config: dict, *args, **kwargs):
-        super().__init__(sensor_config=sensor_config, *args, **kwargs)
+    def _resolve_config(self):
         self.bucket = self.get_config('bucket')
         self.prefix = self.get_config('prefix', '')
         self.regex = self.get_config('regex')
@@ -30,6 +29,5 @@ class S3SensorOperator(ConfigurableSensorOperator):
             if not keys:
                 return False
 
-        self.save_to_storage('key', keys[0])
-        self.save_to_storage('keys', keys)
+        self.save_to_storage(keys)
         return True

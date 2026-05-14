@@ -3,12 +3,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ParamMaker():
     def __init__(self, config):
         self.config = config
 
     def generate_params(self):
         params = {}
+        params = params | self._generate_sensor_param()
         params = params | self._generate_data_param()
         logger.info(f"Generated data params: {params}")
         params = params | self._generate_storage_param()
@@ -16,12 +18,18 @@ class ParamMaker():
         params = params | self._generate_action_param()
         return params
 
+    def _generate_sensor_param(self):
+        params = {}
+        for sensor in self.config.get('sensor', []) or []:
+            params[sensor['name']] = Param(sensor.get('config', {}) or {},
+                                           type=["object", "null"])
+        return params
+
     def _generate_data_param(self):
         params = {}
-        data_config = self.config.get('data', {})
-        for source_type in data_config['source_types']:
-            params[source_type['name']] = Param(source_type['config'],
-                                                type=["object", "null"])
+        for source in self.config.get('data', []) or []:
+            params[source['name']] = Param(source.get('config', {}),
+                                           type=["object", "null"])
         return params
 
     def _generate_storage_param(self):
@@ -43,12 +51,12 @@ class ParamMaker():
 
     def _generate_action_param(self):
         params = {}
-        action_configs = self.config.get('actions', {})
-        for action_config in action_configs:
-            if 'config' not in action_config:
-                action_config['config'] = {}
-            params[action_config['name']] = Param(action_config['config'],
-                                                 type=["object", "null"])
-            params[f"{action_config['name']}_condition"] = Param(
-                action_config['condition'], type=["string", "null"])
+        for action_config in self.config.get('actions', []) or []:
+            name = action_config['name']
+            params[name] = Param(action_config.get('config', {}) or {},
+                                 type=["object", "null"])
+            condition = action_config.get('condition')
+            if condition is not None:
+                params[f"{name}_condition"] = Param(
+                    condition, type=["string", "null"])
         return params

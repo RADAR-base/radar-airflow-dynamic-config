@@ -21,12 +21,7 @@ def load_all_dags():
     """Load all DAGs from config files in the configs directory."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     configs_dir = os.path.join(current_dir, 'configs')
-    #config_files = glob.glob(os.path.join(configs_dir, '*.yaml'))
-    config_files = glob.glob(os.path.join(configs_dir,
-                                          'sample_config_missing_data.yaml')
-                             ) + glob.glob(
-                                 os.path.join(configs_dir,
-                                              'sample_mcraving_prediction_v2.yaml'))
+    config_files = glob.glob(os.path.join(configs_dir, '*.yaml'))
     logger.info(f"Looking for config files in: {configs_dir}")
     logger.info(f"Found config files: {config_files}")
     dags_dict = {}
@@ -35,10 +30,6 @@ def load_all_dags():
             dag_maker = DAGMaker(config_file)
             dag = dag_maker.generate_dags()
             dags_dict[dag.dag_id] = dag
-            # Add each DAG to the dictionary with its dag_id as the key
-            #for dag in dags_list:
-            #    dags_dict[dag.dag_id] = dag
-           #     logger.info(f"Loaded DAG: {dag.dag_id}")
         except Exception as e:
             logger.error(f"Error parsing config {config_file}: {str(e)}")
             import traceback

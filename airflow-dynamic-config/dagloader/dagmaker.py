@@ -1,253 +1,175 @@
 from datetime import datetime, timedelta
 import logging
-from dagloader.configloader import ConfigLoader
+from typing import Dict, List, Tuple, Any
+
 from airflow import DAG
+
+from dagloader.configloader import ConfigLoader
 from dagloader.parammaker import ParamMaker
 from dagloader.datareader.datareaderoperator import DataReaderOperator
-from dagloader.taskprocessor.taskoperator  import TaskOperator
+from dagloader.taskprocessor.taskoperator import TaskOperator
 from dagloader.intermediatestorage.storagefactory import StorageFactory
 from dagloader.conditionparser import ConditionOperator
 from dagloader.actionparser import ActionOperator
 from dagloader.sensors.sensorfactory import SensorFactory
-from typing import Dict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# A node in the DAG: the Airflow operator plus the names it depends on.
+Node = Tuple[Any, List[str]]
+
+
 class DAGMaker:
+    """Build an Airflow DAG from a YAML config.
+
+    The config defines four kinds of nodes — `sensor`, `data`, `tasks`,
+    `actions` — each as a flat list of entries that share the same shape:
+
+        - name: <unique node id>
+          type: <factory key>
+          enabled: <bool, optional, default true>
+          config: { ... }
+          depends_on: [<other node name>, ...]
+
+    Because every node references its upstreams by name through
+    `depends_on`, the dependency graph is built in a single pass over a
+    flat `name -> (operator, depends_on)` map.
+    """
+
     def __init__(self, config_path: str):
-        self.config_loader = ConfigLoader(config_path)
-        self.config = self.config_loader.get_config()
-        intermediate_storage_config = self.config.get(
-            'intermediate_results_storage', {})
+        self.config = ConfigLoader(config_path).get_config()
+
+        storage_config = self.config.get('intermediate_results_storage', {})
         self.storage = StorageFactory.get_storage(
-            storage_type=intermediate_storage_config.get('type', 'local'),
-            **intermediate_storage_config.get('config', {})
+            storage_type=storage_config.get('type', 'local'),
+            **storage_config.get('config', {}),
         )
         self.model_name = self.config.get('model_name', 'unknown').lower()
         self.storage.init(directory_name=self.model_name)
         self.param_maker = ParamMaker(self.config)
 
-    def generate_data_task_dependencies(self, sensor_dags: Dict,
-                                        data_dags: Dict,
-                                        task_dags: Dict) -> Dict:
-        """
-        This function will generate task dependenciesfor data tasksand processing tasks.
-        It will return a dictionary of DAGs with their tasks and dependencies.
-        """
-        dag_tasks = {}
+    @staticmethod
+    def _is_enabled(entry: Dict) -> bool:
+        return entry.get('enabled', True) is not False
 
-        # Add all sensor tasks to the dictionary
-        for sensor_name, sensor_task in sensor_dags.items():
-            dag_tasks[sensor_name] = sensor_task
+    @staticmethod
+    def _depends_on(entry: Dict) -> List[str]:
+        return list(entry.get('depends_on', []) or [])
 
-        # Add all data reader tasks to the dictionary
-        for data_name, data_task in data_dags.items():
-            dag_tasks[data_name] = data_task
-            sensor_dependencies = getattr(data_task, 'depends_on_sensors', [])
-            for sensor_name in sensor_dependencies:
-                if sensor_name in dag_tasks:
-                    dag_tasks[sensor_name] >> data_task
-                else:
-                    logger.warning(
-                        f"Sensor '{sensor_name}' not found for data '{data_name}'"
-                    )
-
-        # Add all processing tasks and set their dependencies on data tasks
-        for task_name, task in task_dags.items():
-            dag_tasks[task_name] = task
-
-            # Get data sources this task depends on
-            task_data_sources = task.task_data_sources
-
-            # Set dependencies: task depends on its data sources
-            for data_source in task_data_sources:
-                if data_source in dag_tasks:
-                    dag_tasks[data_source] >> task
-                else:
-                    logger.warning(f"Data source '{data_source}' not found for task '{task_name}'")
-        return dag_tasks
-
-    def generate_task_action_dependencies(self, dag_tasks: Dict, 
-                                          action_dags: Dict) -> Dict:
-        """
-        This function will generate dependencies between tasks and actions.
-        It will return the updated dictionary of DAGs with action tasks and dependencies.
-        Note: This handles direct dependencies without conditions.
-        """
-        # Add all action tasks and set their dependencies on processing tasks
-        for action_name, action_task in action_dags.items():
-            dag_tasks[action_name] = action_task
-            # Get the keys (tasks) this action depends on
-            action_keys = action_task.keys
-            # Set dependencies: action depends on its required tasks
-            for key in action_keys:
-                if key in dag_tasks:
-                    dag_tasks[key] >> action_task
-                else:
-                    logger.warning(
-                        f"Dependency '{key}' not found for action '{action_name}'")
-
-        return dag_tasks
-
-    def generate_condition_action_dependencies(self, dag_tasks: Dict,
-                                               condition_dags: Dict,
-                                               action_dags: Dict) -> Dict:
-        """
-        This function will generate conditional dependencies between tasks, conditions, and actions.
-        It sets up branch operators that evaluate conditions and route to actions accordingly.
-        The flow is: task -> condition (branch) -> action (if condition is true)
-        """
-        # Add condition branch operators and link them between tasks and actions
-        for action_name, condition_task in condition_dags.items():
-            # Add condition task to dag_tasks with a unique key
-            condition_key = f"{action_name}_condition"
-            dag_tasks[condition_key] = condition_task
-            # Get the dependencies from the action config
-            action_keys = condition_task.action_config.get('depends_on', [])
-            # Set dependencies: condition depends on its required tasks
-            for key in action_keys:
-                if key in dag_tasks:
-                    dag_tasks[key] >> condition_task
-                else:
-                    logger.warning(f"Dependency '{key}' not found for condition '{action_name}'")
-            # Link condition to action - condition branches to action if true
-            if action_name in action_dags:
-                dag_tasks[action_name] = action_dags[action_name]
-                condition_task >> dag_tasks[action_name]
-            else:
-                logger.warning(f"Action '{action_name}' not found for condition '{action_name}'")
-        return dag_tasks
-
-    def generate_task_dependencies(self, sensor_dags: Dict, data_dags: Dict, task_dags: Dict,
-                                   condition_dags: Dict, action_dags: Dict) -> Dict:
-        """
-        This function will generate task dependencies based on data DAGs and task DAGs.
-        It will return a dictionary of DAGs with their tasks and dependencies.
-        Algo:
-        1. Generate data -> task dependencies
-        2. If conditions exist, generate task -> condition -> action dependencies
-        3. Otherwise, generate task -> action dependencies directly
-        """
-        dag_tasks = {}
-        dag_tasks = self.generate_data_task_dependencies(sensor_dags, data_dags, task_dags)
-        logger.info(f"Generated data -> task dependencies: {dag_tasks}")
-        # If conditions are defined, use conditional branching
-        if condition_dags:
-            dag_tasks = self.generate_condition_action_dependencies(dag_tasks, condition_dags, action_dags)
-        else:
-            # Otherwise, create direct task -> action dependencies
-            dag_tasks = self.generate_task_action_dependencies(dag_tasks, action_dags)
-        return dag_tasks
-
-    def parse_sensors(self) -> Dict:
-        sensor_configs = self.config.get('sensor', [])
-        sensor_tasks = {}
-        for sensor in sensor_configs:
-            if sensor.get('enabled', True) is False:
+    def _build_sensors(self) -> Dict[str, Node]:
+        nodes: Dict[str, Node] = {}
+        for sensor in self.config.get('sensor', []) or []:
+            if not self._is_enabled(sensor):
                 continue
-            sensor_type = sensor.get('type')
-            sensor_name = sensor.get('name')
-            if not sensor_type or not sensor_name:
+            name, sensor_type = sensor.get('name'), sensor.get('type')
+            if not name or not sensor_type:
                 logger.warning(f"Skipping sensor with invalid config: {sensor}")
                 continue
-            sensor_tasks[sensor_name] = SensorFactory.get_sensor(
+            operator = SensorFactory.get_sensor(
                 sensor_type=sensor_type,
                 sensor_config=sensor.get('config', {}),
                 intermediate_storage=self.storage,
-                task_id=sensor_name,
+                task_id=name,
             )
-        logger.info(f"Parsed sensor tasks: {sensor_tasks}")
-        return sensor_tasks
+            nodes[name] = (operator, self._depends_on(sensor))
+        return nodes
 
-    def parse_source_types(self, data_configs: Dict) -> Dict:
-        """
-        This function will parse the source types from the config.
-        It will return a dictionary of source types with their configurations.
-        """
-        source_types = data_configs['source_types']
-        data_reader_tasks = {}
-        for source in source_types:
-            data_task = DataReaderOperator(
-                task_id=f"{source['name']}",
-                data_config=data_configs,
+    def _build_data(self) -> Dict[str, Node]:
+        nodes: Dict[str, Node] = {}
+        data_entries = self.config.get('data', []) or []
+        for source in data_entries:
+            if not self._is_enabled(source):
+                continue
+            name = source.get('name')
+            if not name:
+                logger.warning(f"Skipping data source with invalid config: {source}")
+                continue
+            operator = DataReaderOperator(
+                task_id=name,
+                data_config=data_entries,
                 source_config=source,
-                intermediate_storage=self.storage
-                )
-            data_task.depends_on_sensors = source.get('depends_on', [])
-            data_reader_tasks[source['name']] = data_task
-        return data_reader_tasks
-
-    def parse_data_dags(self) -> Dict:
-        """
-        This function will parse the data DAGs from the config.
-        It will return a dictionary of data DAGs with their schedules and tasks.
-        """
-        data_configs = self.config.get('data', [])
-        self.project_id = self.config.get('project')
-        self.source_types = self.config.get('source_types', [])
-        data_dags = self.parse_source_types(data_configs)
-        logger.info(f"Parsed data DAGs: {data_dags}")
-        return data_dags
-
-    def parse_tasks(self) -> Dict:
-        """
-        This function will parse the tasks from the config.
-        It will return a dictionary of tasks with their configurations.
-        """
-        task_configs = self.config.get('tasks', [])
-        tasks_dags = {}
-        for task in task_configs:
-            tasks_dags[task['name']] = TaskOperator(
-                task_id=f"{task['name']}",
-                task_config=task,
-                intermediate_storage=self.storage
+                intermediate_storage=self.storage,
             )
-        logger.info(f"Parsed task DAGs: {tasks_dags}")
-        return tasks_dags
+            nodes[name] = (operator, self._depends_on(source))
+        return nodes
 
-    def parse_actions_and_conditions(self) -> Dict:
+    def _build_tasks(self) -> Dict[str, Node]:
+        nodes: Dict[str, Node] = {}
+        for task in self.config.get('tasks', []) or []:
+            if not self._is_enabled(task):
+                continue
+            name = task.get('name')
+            if not name:
+                logger.warning(f"Skipping task with invalid config: {task}")
+                continue
+            operator = TaskOperator(
+                task_id=name,
+                task_config=task,
+                intermediate_storage=self.storage,
+            )
+            nodes[name] = (operator, self._depends_on(task))
+        return nodes
+
+    def _build_actions(self) -> Dict[str, Node]:
+        """Build action nodes, inserting a branch node when a condition is set.
+
+        Conditional flow becomes: <upstreams> -> <name>_condition -> <name>.
+        Unconditional flow stays:  <upstreams> -> <name>.
         """
-        This function will parse the actions from the config.
-        It will return a dictionary of actions with their configurations.
-        """
-        actions_configs = self.config.get('actions', [])
-        action_dags = {}
-        condition_dags = {}
-        for action in actions_configs:
-            action_name = action['name']
-            action_conditions = action.get('condition', '')
-            data_keys = action.get('depends_on', [])
-            condition_operator = ConditionOperator(
+        nodes: Dict[str, Node] = {}
+        for action in self.config.get('actions', []) or []:
+            if not self._is_enabled(action):
+                continue
+            name = action.get('name')
+            if not name:
+                logger.warning(f"Skipping action with invalid config: {action}")
+                continue
+
+            upstreams = self._depends_on(action)
+            action_op = ActionOperator(
+                task_id=name,
                 action_config=action,
                 intermediate_storage=self.storage,
-                task_id=f"{action_name}_branch"
             )
-            condition_dags[action_name] = condition_operator
-            action_dags[action_name] = ActionOperator(
-                task_id=f"{action_name}",
-                action_config=action,
-                intermediate_storage=self.storage
-            )
-        return action_dags, condition_dags
 
-    def parse_configs(self) -> Dict:
-        """
-        This function will parse the configs and create a list of DAGs with their tasks.
-        Each DAG will correspond to a unique schedule found in the config.
-        """
-        sensor_dags = self.parse_sensors()
-        data_dags = self.parse_data_dags()
-        task_dags = self.parse_tasks()
-        action_dags, condition_dags = self.parse_actions_and_conditions()
-        logger.info(f"Action tasks: {action_dags}, Condition tasks: {condition_dags}")
-        dag_tasks = self.generate_task_dependencies(sensor_dags, data_dags, task_dags, condition_dags, action_dags)
-        return dag_tasks
+            if action.get('condition'):
+                branch_name = f"{name}_condition"
+                branch_op = ConditionOperator(
+                    task_id=f"{name}_branch",
+                    action_config=action,
+                    intermediate_storage=self.storage,
+                )
+                nodes[branch_name] = (branch_op, upstreams)
+                nodes[name] = (action_op, [branch_name])
+            else:
+                nodes[name] = (action_op, upstreams)
+        return nodes
 
-    def generate_dags(self):
-        # Logic to create DAG based on self.config
-        dag_id = f"{self.config.get('model_name', 'unknown').lower()}"
+    @staticmethod
+    def _wire(nodes: Dict[str, Node]) -> None:
+        for name, (operator, depends_on) in nodes.items():
+            for dep in depends_on:
+                upstream = nodes.get(dep)
+                if upstream is None:
+                    logger.warning(f"Dependency '{dep}' not found for '{name}'")
+                    continue
+                upstream[0] >> operator
+
+    def build_nodes(self) -> Dict[str, Node]:
+        nodes = {
+            **self._build_sensors(),
+            **self._build_data(),
+            **self._build_tasks(),
+            **self._build_actions(),
+        }
+        self._wire(nodes)
+        logger.info(f"Built DAG nodes: {list(nodes.keys())}")
+        return nodes
+
+    def generate_dags(self) -> DAG:
+        dag_id = self.model_name
         dag_name = f"{dag_id}_dag"
         dag_schedule = self.config.get('schedule', '@daily')
         default_args = {
@@ -259,8 +181,9 @@ class DAGMaker:
             'retry_delay': timedelta(minutes=5),
         }
         dag_params = self.param_maker.generate_params()
-        logger.info(f"Creating DAG with ID: {dag_id}, Schedule: {dag_schedule}, Params: {dag_params}")
-        logger.info(f"task DAG params: {dag_params}")
+        logger.info(
+            f"Creating DAG '{dag_id}' schedule={dag_schedule} params={dag_params}"
+        )
         with DAG(
             dag_id=dag_name,
             default_args=default_args,
@@ -271,6 +194,5 @@ class DAGMaker:
             tags=['radar', 'dynamic', 'python-class'],
             params=dag_params,
         ) as dag:
-            dag_tasks = self.parse_configs()
-            logger.info(f"Creating DAG: {dag_id} with tasks: {dag_tasks}")
+            self.build_nodes()
         return dag
