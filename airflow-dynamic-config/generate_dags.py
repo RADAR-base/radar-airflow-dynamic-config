@@ -26,7 +26,7 @@ def load_all_dags():
                                           'sample_config_missing_data.yaml')
                              ) + glob.glob(
                                  os.path.join(configs_dir,
-                                              'sample_mcraving_prediction.yaml'))
+                                              'sample_mcraving_prediction_v2.yaml'))
     logger.info(f"Looking for config files in: {configs_dir}")
     logger.info(f"Found config files: {config_files}")
     dags_dict = {}

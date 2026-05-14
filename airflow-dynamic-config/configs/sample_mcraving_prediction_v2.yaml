@@ -1,0 +1,59 @@
+model_name: craving_prediction_model_v2
+model_description: Sample config to demonstrate craving prediction model
+schedule: "*/10 * * * *" # every 10 mins
+intermediate_results_storage:
+  type: SQL
+  config:
+    conn_id: timescale_staging
+    database: intermediate_results_db
+    table_prefix: craving_data
+
+sensor:
+  - name: craving_prediction_sensor
+    type: s3
+    enabled: true
+    config:
+      conn_id: s3_empatica
+      bucket: radar-playground-testing
+      prefix: raw
+      keys: empatica_data/empatica/.+/.+/.+\.avro
+
+data:
+  - type: s3
+    name: mcraving_empatica_s3
+    config:
+      conn_id: s3_empatica
+      bucket: radar-playground-testing
+      project: STAGING_PROJECT
+      keys: "{{ craving_prediction_sensor.keys }}"
+      format: avro
+    depends_on:
+      - craving_prediction_sensor
+
+tasks:
+  - name: preprocessing_task
+    type: custom
+    enabled: true
+    path: custom/mcraving_pipeline/preprocessing.py
+    config:
+      cleaning_level: "standard"
+    depends_on:
+      - mcraving_empatica_s3
+
+  - name: craving_prediction_task
+    type: custom
+    enabled: true
+    path: custom/mcraving_pipeline/prediction.py
+    config:
+      model_path: "models/craving_prediction_model_v2.pkl"
+    depends_on:
+      - preprocessing_task
+
+actions:
+  - name: notify_participants
+    type: "send_notification"
+    filter_list_key: "craving_prediction_task"
+    condition: 'craving_prediction_task.prediction == 1'
+    depends_on:
+      - craving_prediction_task
+    time: "immediate"

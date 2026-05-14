@@ -16,6 +16,33 @@
       "type": "string",
       "description": "Human-readable description of the model/pipeline purpose"
     },
+    "sensor": {
+      "type": "array",
+      "description": "Optional sensors that gate data ingestion",
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique name for the sensor"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["kafka", "s3"]
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "config": {
+            "type": "object",
+            "description": "Sensor-specific configuration",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
     "data": {
       "type": "object",
       "description": "Data source configuration",

@@ -8,6 +8,7 @@ from dagloader.taskprocessor.taskoperator  import TaskOperator
 from dagloader.intermediatestorage.storagefactory import StorageFactory
 from dagloader.conditionparser import ConditionOperator
 from dagloader.actionparser import ActionOperator
+from dagloader.sensors.sensorfactory import SensorFactory
 from typing import Dict
 
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +29,8 @@ class DAGMaker:
         self.storage.init(directory_name=self.model_name)
         self.param_maker = ParamMaker(self.config)
 
-    def generate_data_task_dependencies(self, data_dags: Dict,
+    def generate_data_task_dependencies(self, sensor_dags: Dict,
+                                        data_dags: Dict,
                                         task_dags: Dict) -> Dict:
         """
         This function will generate task dependenciesfor data tasksand processing tasks.
@@ -36,9 +38,21 @@ class DAGMaker:
         """
         dag_tasks = {}
 
+        # Add all sensor tasks to the dictionary
+        for sensor_name, sensor_task in sensor_dags.items():
+            dag_tasks[sensor_name] = sensor_task
+
         # Add all data reader tasks to the dictionary
         for data_name, data_task in data_dags.items():
             dag_tasks[data_name] = data_task
+            sensor_dependencies = getattr(data_task, 'depends_on_sensors', [])
+            for sensor_name in sensor_dependencies:
+                if sensor_name in dag_tasks:
+                    dag_tasks[sensor_name] >> data_task
+                else:
+                    logger.warning(
+                        f"Sensor '{sensor_name}' not found for data '{data_name}'"
+                    )
 
         # Add all processing tasks and set their dependencies on data tasks
         for task_name, task in task_dags.items():
@@ -106,7 +120,7 @@ class DAGMaker:
                 logger.warning(f"Action '{action_name}' not found for condition '{action_name}'")
         return dag_tasks
 
-    def generate_task_dependencies(self, data_dags: Dict, task_dags: Dict,
+    def generate_task_dependencies(self, sensor_dags: Dict, data_dags: Dict, task_dags: Dict,
                                    condition_dags: Dict, action_dags: Dict) -> Dict:
         """
         This function will generate task dependencies based on data DAGs and task DAGs.
@@ -117,7 +131,7 @@ class DAGMaker:
         3. Otherwise, generate task -> action dependencies directly
         """
         dag_tasks = {}
-        dag_tasks = self.generate_data_task_dependencies(data_dags, task_dags)
+        dag_tasks = self.generate_data_task_dependencies(sensor_dags, data_dags, task_dags)
         logger.info(f"Generated data -> task dependencies: {dag_tasks}")
         # If conditions are defined, use conditional branching
         if condition_dags:
@@ -127,6 +141,26 @@ class DAGMaker:
             dag_tasks = self.generate_task_action_dependencies(dag_tasks, action_dags)
         return dag_tasks
 
+    def parse_sensors(self) -> Dict:
+        sensor_configs = self.config.get('sensor', [])
+        sensor_tasks = {}
+        for sensor in sensor_configs:
+            if sensor.get('enabled', True) is False:
+                continue
+            sensor_type = sensor.get('type')
+            sensor_name = sensor.get('name')
+            if not sensor_type or not sensor_name:
+                logger.warning(f"Skipping sensor with invalid config: {sensor}")
+                continue
+            sensor_tasks[sensor_name] = SensorFactory.get_sensor(
+                sensor_type=sensor_type,
+                sensor_config=sensor.get('config', {}),
+                intermediate_storage=self.storage,
+                task_id=sensor_name,
+            )
+        logger.info(f"Parsed sensor tasks: {sensor_tasks}")
+        return sensor_tasks
+
     def parse_source_types(self, data_configs: Dict) -> Dict:
         """
         This function will parse the source types from the config.
@@ -135,12 +169,14 @@ class DAGMaker:
         source_types = data_configs['source_types']
         data_reader_tasks = {}
         for source in source_types:
-            data_reader_tasks[source['name']] = DataReaderOperator(
+            data_task = DataReaderOperator(
                 task_id=f"{source['name']}",
                 data_config=data_configs,
                 source_config=source,
                 intermediate_storage=self.storage
                 )
+            data_task.depends_on_sensors = source.get('depends_on', [])
+            data_reader_tasks[source['name']] = data_task
         return data_reader_tasks
 
     def parse_data_dags(self) -> Dict:
@@ -201,11 +237,12 @@ class DAGMaker:
         This function will parse the configs and create a list of DAGs with their tasks.
         Each DAG will correspond to a unique schedule found in the config.
         """
+        sensor_dags = self.parse_sensors()
         data_dags = self.parse_data_dags()
         task_dags = self.parse_tasks()
         action_dags, condition_dags = self.parse_actions_and_conditions()
         logger.info(f"Action tasks: {action_dags}, Condition tasks: {condition_dags}")
-        dag_tasks = self.generate_task_dependencies(data_dags, task_dags, condition_dags, action_dags)
+        dag_tasks = self.generate_task_dependencies(sensor_dags, data_dags, task_dags, condition_dags, action_dags)
         return dag_tasks
 
     def generate_dags(self):
