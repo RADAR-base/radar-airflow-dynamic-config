@@ -1,29 +1,59 @@
 from airflow.sdk import BaseOperator
 from dagloader.datareader.datareaderfactory import DataReaderFactory
+import copy
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DataReaderOperator(BaseOperator):
-    def __init__(self, data_config: dict, source_config: dict,
+    """Data-source operator driven by a unified-format data entry.
+
+    Mirrors the sensor / task pattern:
+      - `_initial_source_config` holds the pristine YAML entry.
+      - `source_config` is the active version mutated by `pre_execute`.
+      - `_resolve_config()` caches `source_name`, `source_type`,
+        `reader_kwargs` from `source_config`.
+    ParamMaker emits one Param per data source keyed by name (= `task_id`)
+    whose default is the source's `config` block; the override merges
+    into `source_config['config']`.
+    """
+
+    def __init__(self, data_config, source_config: dict,
                  intermediate_storage, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.data_config = data_config
-        self.source_config = source_config
         self.intermediate_storage = intermediate_storage
-        self.source_name = source_config.get('name')
-        self.source_type = source_config.get('type')
-        self.source_config = source_config.get('config', {})
+        self.data_config = data_config
+        self._initial_source_config = copy.deepcopy(source_config) or {}
+        self.source_config = copy.deepcopy(self._initial_source_config)
+        self._resolve_config()
+
+    def _resolve_config(self):
+        self.source_name = self.source_config.get('name')
+        self.source_type = self.source_config.get('type')
+        self.reader_kwargs = self.source_config.get('config', {}) or {}
+
+    def pre_execute(self, context):
+        super().pre_execute(context)
+        params = (context or {}).get('params') or {}
+        override = params.get(self.task_id)
+        if not isinstance(override, dict) or not override:
+            return
+        new_source_config = copy.deepcopy(self._initial_source_config)
+        base_config = new_source_config.get('config') or {}
+        new_source_config['config'] = {**base_config, **override}
+        if new_source_config == self.source_config:
+            return
+        logger.info(
+            f"Data source '{self.task_id}' applying runtime config override: "
+            f"{sorted(override.keys())}"
+        )
+        self.source_config = new_source_config
+        self._resolve_config()
 
     def execute(self, context):
-        # Update source_config from runtime parameters if available
-        runtime_data_configs = context['params'].get('data', {})
-        runtime_source_types = runtime_data_configs.get('source_types', []) if isinstance(runtime_data_configs, dict) else context['params'].get('source_types', [])
-        runtime_source_config = next((s for s in runtime_source_types if s.get('name') == self.source_name), self.source_config)
-
-        # Merge with existing
-        self.source_config = runtime_source_config.get('config', runtime_source_config)
-        self.source_type = runtime_source_config.get('type', self.source_type)
-
-        reader = DataReaderFactory.get_data_reader(self.source_type,
-                                                   **self.source_config)
+        reader = DataReaderFactory.get_data_reader(
+            self.source_type, **self.reader_kwargs
+        )
         data = reader.read_data()
         self.intermediate_storage.save(self.source_name, data)

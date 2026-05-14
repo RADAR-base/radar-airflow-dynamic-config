@@ -1,5 +1,6 @@
 from airflow.providers.apache.kafka.hooks.produce import KafkaProducerHook
 from airflow.sdk import BaseOperator
+import copy
 import logging
 import re
 from typing import Any
@@ -124,16 +125,51 @@ class ActionParser:
 
 
 class ActionOperator(BaseOperator):
+    """Action operator driven by a unified-format action entry.
+
+    Same pattern as the sensors / tasks / data sources:
+      - `_initial_action_config` holds the pristine YAML entry.
+      - `action_config` is the active version mutated by `pre_execute`.
+      - `_resolve_config()` rebuilds the `ActionParser`, the storage key,
+        and the Kafka writer from `action_config`.
+    ParamMaker emits one Param per action keyed by name (= `task_id`)
+    whose default is the action's `config` block; that override merges
+    into `action_config['config']`.
+    """
+
     def __init__(self, action_config: dict, intermediate_storage,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.intermediate_storage = intermediate_storage
-        self.action_parser = ActionParser(action_config)
-        self.key = action_config.get('name', []) + "_condition"
+        self._initial_action_config = copy.deepcopy(action_config) or {}
+        self.action_config = copy.deepcopy(self._initial_action_config)
+        self._resolve_config()
+
+    def _resolve_config(self):
+        self.action_parser = ActionParser(self.action_config)
+        self.key = f"{self.action_config.get('name', '')}_condition"
         self.writer = KafkaWriter(
             topic=self.action_parser.OUTPUT_TOPIC,
-            kafka_conn_id=self.action_parser.KAFKA_CONN_ID
+            kafka_conn_id=self.action_parser.KAFKA_CONN_ID,
         )
+
+    def pre_execute(self, context):
+        super().pre_execute(context)
+        params = (context or {}).get('params') or {}
+        override = params.get(self.task_id)
+        if not isinstance(override, dict) or not override:
+            return
+        new_action_config = copy.deepcopy(self._initial_action_config)
+        base_config = new_action_config.get('config') or {}
+        new_action_config['config'] = {**base_config, **override}
+        if new_action_config == self.action_config:
+            return
+        logger.info(
+            f"Action '{self.task_id}' applying runtime config override: "
+            f"{sorted(override.keys())}"
+        )
+        self.action_config = new_action_config
+        self._resolve_config()
 
     def execute(self, context):
         logger.info(

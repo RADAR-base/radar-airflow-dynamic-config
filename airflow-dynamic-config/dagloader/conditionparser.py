@@ -1,6 +1,8 @@
 import rule_engine as re
 from airflow.providers.standard.operators.branch import BaseBranchOperator
+import copy
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,16 +30,53 @@ class ConditionParser:
 
 
 class ConditionOperator(BaseBranchOperator):
+    """Branch operator gating a conditional action.
+
+    Same pattern as the other operators:
+      - `_initial_action_config` holds the pristine YAML action entry.
+      - `action_config` is the active version mutated by `pre_execute`.
+      - `_resolve_config()` (re)builds the `ConditionParser` from the
+        active `action_config['condition']`.
+    ParamMaker emits the action's config under key `<name>` and the
+    condition string under key `<name>_condition`; the branch operator's
+    own `task_id` is `<name>_branch`, so both keys are looked up
+    explicitly off the action name rather than via `self.task_id`.
+    """
+
     # https://airflow.apache.org/docs/apache-airflow/stable/core-concepts/dags.html#branching
     def __init__(self, intermediate_storage, action_config: dict, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.action_name = action_config.get('name', None)
-        condition_str = action_config.get('condition', '')
-        self.condition_parser = ConditionParser(condition_str=condition_str,
-                                             condition_name=self.action_name)
         self.intermediate_storage = intermediate_storage
-        self.action_config = action_config
+        self._initial_action_config = copy.deepcopy(action_config) or {}
+        self.action_config = copy.deepcopy(self._initial_action_config)
+        self.action_name = self.action_config.get('name')
+        self._resolve_config()
 
+    def _resolve_config(self):
+        self.condition_parser = ConditionParser(
+            condition_str=self.action_config.get('condition', '') or '',
+            condition_name=self.action_name,
+        )
+
+    def pre_execute(self, context):
+        super().pre_execute(context)
+        params = (context or {}).get('params') or {}
+        config_override = params.get(self.action_name)
+        condition_override = params.get(f"{self.action_name}_condition")
+        new_action_config = copy.deepcopy(self._initial_action_config)
+        if isinstance(config_override, dict) and config_override:
+            base_config = new_action_config.get('config') or {}
+            new_action_config['config'] = {**base_config, **config_override}
+        if isinstance(condition_override, str) and condition_override:
+            new_action_config['condition'] = condition_override
+        if new_action_config == self.action_config:
+            return
+        logger.info(
+            f"Condition '{self.task_id}' applying runtime override "
+            f"(config={bool(config_override)}, condition={bool(condition_override)})"
+        )
+        self.action_config = new_action_config
+        self._resolve_config()
 
     def choose_branch(self, context):
         task_ids = self.action_config.get('depends_on', [])
