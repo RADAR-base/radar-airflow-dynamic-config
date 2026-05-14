@@ -1,0 +1,32 @@
+# S3 Data Generator Configuration
+
+environment: "testing"
+
+s3:
+  bucket: "radar-playground"
+  region: "us-east-1"
+
+environments:
+  testing:
+    s3:
+      bucket: "radar-playground-testing"
+      region: "us-east-1"
+      endpoint_url: "http://minio:9000"
+      access_key: "minioadmin"
+      secret_key: "minioadmin"
+
+# Generator configurations
+generators:
+  - data_type: "empatica"
+    path: "empatica_data/"
+    interval: 120 # Time in seconds between data generation
+    enabled: true
+    num_participants: 10
+    records_per_interval: 3
+    participant_prefix: ""
+    participant_id_width: 4
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

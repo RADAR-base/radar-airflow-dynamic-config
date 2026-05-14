@@ -1,34 +1,46 @@
 model_name: sample_anomaly_detection  # No model needed
 model_description: Sample config to demonstrate heart rate spikes detection
+
+intermediate_results_storage:
+  type: sql
+  config:
+    conn_id: postgres_staging
+    database:  intermediate_results_db
+    table_prefix: sample_anomaly_detection
+
 data:
-  project: STAGING_PROJECT
-  source_types:
-    - type: kafka
-      name: wearable_heart_rate_kafka
-      source_config:
-        conn_id: kafka_staging
-        topics:
-          - wearable_heart_rate
+  - name: wearable_heart_rate_kafka
+    type: kafka
+    config:
+      conn_id: kafka_staging
+      project: STAGING_PROJECT
+      topics:
+        - wearable_heart_rate
+    depends_on:
+      - anomaly_detection_sensor
+
 tasks:
-  - task_name: anomaly_detection
-    type: custom_task
+  - name: anomaly_detection
+    type: custom
     enabled: true
-    data_sources:
-      - wearable_heart_rate_kafka
-    schedule: "* 5 * * *"
+
     path: /sample_anomaly_detection/STAGING_PROJECT/spike_detection.py
     params:
       threshold: 200  # Heart rate threshold for spike detection
-    actions:
-      - type: "send_notification"
-        conditions:
-          - "anomaly_detection.participants_id.is_anomaly == true"
-        config:
-          notification_schedule_time: "{{ timedelta(minutes=5) }}"
-          notification_text: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"
-      - type: "email_alert"
-        config:
-          recipients:
-            - "xyz@gmail.com"
-          subject: "Heart Rate Spike Detected"
-          body: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"
+    depends_on:
+      - wearable_heart_rate_kafka
+
+actions:
+  - name: notify_heart_rate_spike
+    type: "send_notification"
+    condition: "anomaly_detection.participants_id == true"
+    config:
+      time: "{{ timedelta(minutes=5) }}"
+      message: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"
+  - name: email_alert
+    type: "email_alert"
+    config:
+      recipients:
+        - "xyz@gmail.com"
+      subject: "Heart Rate Spike Detected"
+      body: "A heart rate spike has been detected for participant: {{ anomaly_detection.participants_id }}"
