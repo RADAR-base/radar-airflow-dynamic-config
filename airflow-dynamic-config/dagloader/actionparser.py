@@ -6,6 +6,8 @@ import re
 from typing import Any
 from dateutil import parser
 
+from dagloader.backoff import BackoffFilter
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,6 +154,11 @@ class ActionOperator(BaseOperator):
             topic=self.action_parser.OUTPUT_TOPIC,
             kafka_conn_id=self.action_parser.KAFKA_CONN_ID,
         )
+        self.backoff_filter = BackoffFilter(
+            action_name=self.action_config.get('name', ''),
+            backoff_config=(self.action_config.get('config') or {}).get('backoff'),
+            intermediate_storage=self.intermediate_storage,
+        )
 
     def pre_execute(self, context):
         super().pre_execute(context)
@@ -188,7 +195,16 @@ class ActionOperator(BaseOperator):
             )
 
         elif isinstance(data[self.key], list):
-            for datum in data[self.key]:
+            filtered = self.backoff_filter.apply(data[self.key])
+            logger.info("After backoff filter, %d items remain for action "
+                        "%s.", len(filtered), self.action_parser.action_name)
+            if not filtered:
+                logger.info(
+                    f"Action {self.action_parser.action_name} skipped: "
+                    "all items filtered by backoff."
+                )
+                return
+            for datum in filtered:
                 single_data = datum
                 report = self.action_parser.producer_function(single_data)
                 logger.info(
