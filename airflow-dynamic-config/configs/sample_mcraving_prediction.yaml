@@ -8,6 +8,17 @@ intermediate_results_storage:
     database: intermediate_results_db
     table_prefix: craving_data
 
+sensor:
+  - name: craving_prediction_sensor
+    type: kafka
+    enabled: true
+    config:
+      conn_id: kafka_staging
+      project: STAGING_PROJECT
+      topics:
+        - wearable-device-data
+      poke_interval: 10
+
 data:
   - name: mcraving_empatica_data
     type: kafka
@@ -16,6 +27,8 @@ data:
       project: STAGING_PROJECT
       topics:
         - wearable-device-data
+    depends_on:
+      - craving_prediction_sensor
 
 tasks:
   - name: preprocessing_task

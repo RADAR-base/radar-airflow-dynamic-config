@@ -17,7 +17,9 @@ class KafkaSensorOperator(ConfigurableSensorOperator):
             self.topics = []
         self.max_messages = int(self.get_config('max_messages', 1))
         self.poll_timeout = int(self.get_config('poll_timeout', 5))
-        self.consumer_config = self.get_config('consumer_config', {})
+        self.consumer_config = self.get_config('config', {})
+        self.poke_interval = int(self.get_config('poke_interval',
+                                                 self.poke_interval))
 
     def poke(self, context):
         if not self.topics:
@@ -26,8 +28,7 @@ class KafkaSensorOperator(ConfigurableSensorOperator):
 
         hook = KafkaConsumerHook(
             topics=self.topics,
-            kafka_config_id=self.conn_id,
-            consumer_config=self.consumer_config,
+            kafka_config_id=self.conn_id
         )
         consumer = hook.get_consumer()
         matched_messages = []

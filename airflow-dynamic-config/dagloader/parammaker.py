@@ -1,4 +1,4 @@
-from airflow.models.param import Param
+from airflow.sdk import Param
 import logging
 
 logger = logging.getLogger(__name__)

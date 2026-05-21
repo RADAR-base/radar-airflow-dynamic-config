@@ -13,16 +13,17 @@ sensor:
     type: s3
     enabled: true
     config:
-      conn_id: s3_empatica
+      conn_id: minio-s3
       bucket: radar-playground-testing
       prefix: raw
       keys: empatica_data/empatica/.+/.+/.+\.avro
+      poke_interval: 15
 
 data:
   - type: s3
     name: mcraving_empatica_s3
     config:
-      conn_id: s3_empatica
+      conn_id: minio-s3
       bucket: radar-playground-testing
       project: STAGING_PROJECT
       keys: "{{ craving_prediction_sensor.keys }}"
