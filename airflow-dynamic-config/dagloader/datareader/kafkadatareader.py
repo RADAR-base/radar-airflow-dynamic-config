@@ -8,11 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 class KafkaDataReader(DataReader):
-    def __init__(self, conn_id: str, topics: list, max_messages=1000, poll_timeout=5):
+    def __init__(self, conn_id: str, topics: list, max_messages=1000,
+                 poll_timeout=5, format='json'):
         self.conn_id = conn_id
         self.topics = topics if isinstance(topics, list) else [topics]
         self.max_messages = max_messages
         self.poll_timeout = poll_timeout
+        self.format = format
 
     def read_data(self):
         logger.info(f"Reading data from Kafka topics: {self.topics}")
@@ -40,11 +42,20 @@ class KafkaDataReader(DataReader):
                     logger.warning(f"Consumer error on topic {topic}: {msg.error()}")
                     continue
                 try:
-                    value = msg.value()
-                    if value is not None:
-                        if isinstance(value, bytes):
-                            value = value.decode('utf-8')
-                        message_values.append(json.loads(value))
+                    if self.format == 'json':
+                        value = msg.value()
+                        if value is not None:
+                            if isinstance(value, bytes):
+                                value = value.decode('utf-8')
+                            message_values.append(json.loads(value))
+                    elif self.format == 'avro':
+                        value = msg.value()
+                        if value is not None and not isinstance(value, dict):
+                            value = dict(value)
+                        if value is not None:
+                            message_values.append(value)
+                    else:
+                        logger.warning(f"Unsupported format '{self.format}' for topic {topic}")
                 except Exception as e:
                     logger.warning(f"Error processing message from {topic}: {e}")
                     continue

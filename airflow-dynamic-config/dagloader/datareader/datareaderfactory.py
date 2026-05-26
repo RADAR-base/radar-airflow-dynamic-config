@@ -9,7 +9,8 @@ class DataReaderFactory:
                 conn_id=kwargs.get('conn_id', 'kafka_default'),
                 topics=kwargs.get('topics', []),
                 max_messages=kwargs.get('max_messages', 1000),
-                poll_timeout=kwargs.get('poll_timeout', 5)
+                poll_timeout=kwargs.get('poll_timeout', 5),
+                format=kwargs.get('format', 'json'),
             )
         else:
             raise ValueError(f"Unsupported reader type: {reader_type}")

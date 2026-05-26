@@ -14,6 +14,8 @@ data:
     config:
       conn_id: kafka_staging
       project: STAGING_PROJECT
+      lookback_window: 3600 # 1 hour
+      format: avro
       topics:
         - s3-source-topic
 
@@ -44,6 +46,8 @@ actions:
       message: "Craving predicted for participant: {{ craving_prediction_task.user_id }}"
       backoff:
         enabled: true
-        interval: 3600 # 1 hour
+        interval: 7200 # 2 hour
         backoff_key: "user_id"
         backoff_strategy: "fixed"
+        max_messages: 3
+        max_messages_units: "day"
