@@ -50,6 +50,7 @@ class KafkaDataReader(DataReader):
                             message_values.append(json.loads(value))
                     elif self.format == 'avro':
                         value = msg.value()
+                        logger.info(f"Raw message value from topic {topic}: {value}")
                         if value is not None and not isinstance(value, dict):
                             value = dict(value)
                         if value is not None:
