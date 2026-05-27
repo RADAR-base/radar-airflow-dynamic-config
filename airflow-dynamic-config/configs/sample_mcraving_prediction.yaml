@@ -60,3 +60,5 @@ actions:
         interval: 3600 # 1 hour
         backoff_key: "user_id"
         backoff_strategy: "fixed"
+        max_messages: 3
+        max_messages_units: "day"

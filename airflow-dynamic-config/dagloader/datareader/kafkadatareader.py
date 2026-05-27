@@ -2,6 +2,8 @@ from dagloader.datareader.datareader import DataReader
 from airflow.providers.apache.kafka.hooks.consume import KafkaConsumerHook
 import json
 from typing import List, Dict, Any
+import time
+
 
 import logging
 logger = logging.getLogger(__name__)
@@ -9,12 +11,13 @@ logger = logging.getLogger(__name__)
 
 class KafkaDataReader(DataReader):
     def __init__(self, conn_id: str, topics: list, max_messages=1000,
-                 poll_timeout=5, format='json'):
+                 poll_timeout=5, format='json', lookback_window=None):
         self.conn_id = conn_id
         self.topics = topics if isinstance(topics, list) else [topics]
         self.max_messages = max_messages
         self.poll_timeout = poll_timeout
         self.format = format
+        self.lookback_window = lookback_window
 
     def read_data(self):
         logger.info(f"Reading data from Kafka topics: {self.topics}")
@@ -23,6 +26,12 @@ class KafkaDataReader(DataReader):
             logger.info(f"Consuming messages from topic: {topic}")
             data[topic] = self._consume_topic(topic)
         return data
+
+    def _check_lookback_window(self, msg_timestamp):
+        if self.lookback_window is None:
+            return True
+        current_time = time.time()
+        return msg_timestamp >= current_time - self.lookback_window
 
     def _consume_topic(self, topic: str) -> List[Dict[str, Any]]:
         """Consume messages from a single Kafka topic using KafkaConsumerHook."""
@@ -47,14 +56,18 @@ class KafkaDataReader(DataReader):
                         if value is not None:
                             if isinstance(value, bytes):
                                 value = value.decode('utf-8')
-                            message_values.append(json.loads(value))
+                            if self._check_lookback_window(msg.timestamp()[1] / 1000.0):
+                                message_values.append(json.loads(value))
+                            else:
+                                # commit the message to avoid reprocessing in future runs
+                                consumer.commit(message=msg)
                     elif self.format == 'avro':
                         value = msg.value()
-                        logger.info(f"Raw message value from topic {topic}: {value}")
-                        if value is not None and not isinstance(value, dict):
-                            value = dict(value)
                         if value is not None:
-                            message_values.append(value)
+                            if self._check_lookback_window(msg.timestamp()[1] / 1000.0):
+                                message_values.append(value)
+                            else:
+                                consumer.commit(message=msg)
                     else:
                         logger.warning(f"Unsupported format '{self.format}' for topic {topic}")
                 except Exception as e:

@@ -11,6 +11,7 @@ class DataReaderFactory:
                 max_messages=kwargs.get('max_messages', 1000),
                 poll_timeout=kwargs.get('poll_timeout', 5),
                 format=kwargs.get('format', 'json'),
+                lookback_window=kwargs.get('lookback_window', None),
             )
         else:
             raise ValueError(f"Unsupported reader type: {reader_type}")

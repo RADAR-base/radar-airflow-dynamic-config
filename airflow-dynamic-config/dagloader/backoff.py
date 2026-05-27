@@ -7,6 +7,8 @@ An action may declare a `backoff` block:
       interval: 600             # seconds
       backoff_key: "participants_id"
       backoff_strategy: "fixed"
+      max_messages: 3
+      max_messages_units: "day"
 
 When applied to a list of items, the filter drops any item whose
 `backoff_key` value was last fired within the backoff window. State is
