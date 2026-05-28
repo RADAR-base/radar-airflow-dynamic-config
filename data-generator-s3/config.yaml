@@ -1,30 +1,34 @@
-# S3 Data Generator Configuration
+# Kafka Empatica Data Generator Configuration
 
 environment: "testing"
 
-s3:
-  bucket: "radar-playground"
-  region: "us-east-1"
+kafka:
+  topic: "s3-source-topic"
 
 environments:
   testing:
-    s3:
-      bucket: "radar-playground-testing"
-      region: "us-east-1"
-      endpoint_url: "http://minio:9000"
-      access_key: "minioadmin"
-      secret_key: "minioadmin"
+    kafka:
+      bootstrap_servers: "kafka-1:9092,kafka-2:9092,kafka-3:9092"
+      schema_registry_url: "http://schema-registry-1:8081"
+      topic: "s3-source-topic"
 
 # Generator configurations
 generators:
   - data_type: "empatica"
-    path: "empatica_data/"
-    interval: 120 # Time in seconds between data generation
+    interval: 60 # Time in seconds between data generation
     enabled: true
     num_participants: 10
     records_per_interval: 3
     participant_prefix: ""
     participant_id_width: 4
+    # Length of the sensor session captured in each generated record.
+    duration_seconds: 10
+    device_model: "EMBRACEPLUS"
+    timezone: 3600
+    enrollment:
+      siteID: "001"
+      studyID: "ACRM"
+      organizationID: "TSPN"
 
 # Logging configuration
 logging:

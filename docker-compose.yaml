@@ -136,28 +136,31 @@ services:
   #---------------------------------------------------------------------------#
   # Data Generator                                                            #
   #---------------------------------------------------------------------------#
-  data-generator:
-    build:
-      context: ./data-generator
-      dockerfile: Dockerfile
-    depends_on:
-      - kafka-1
-      - kafka-2
-      - kafka-3
-    restart: unless-stopped
-    volumes:
-      - ./data-generator/config.yaml:/app/config.yaml:ro
-    environment:
-      - PYTHONUNBUFFERED=1
-    networks:
-      - default
+  #data-generator:
+  #  build:
+  #    context: ./data-generator
+  #    dockerfile: Dockerfile
+  #  depends_on:
+  #    - kafka-1
+  #    - kafka-2
+  #    - kafka-3
+  #  restart: unless-stopped
+  #  volumes:
+  #    - ./data-generator/config.yaml:/app/config.yaml:ro
+  #  environment:
+  #    - PYTHONUNBUFFERED=1
+  #  networks:
+  #    - default
 
   data-generator-s3:
     build:
       context: ./data-generator-s3
       dockerfile: Dockerfile
     depends_on:
-      - minio
+      - kafka-1
+      - kafka-2
+      - kafka-3
+      - schema-registry-1
     restart: unless-stopped
     volumes:
       - ./data-generator-s3/config.yaml:/app/config.yaml:ro
@@ -249,6 +252,8 @@ services:
       retries: 5
       start_period: 5s
     restart: always
+    ports:
+      - "5432:5432"
 
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change

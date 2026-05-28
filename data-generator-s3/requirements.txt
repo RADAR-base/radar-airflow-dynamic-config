@@ -1,3 +1,2 @@
-boto3
-fastavro
+confluent-kafka[avro]==2.4.0
 PyYAML

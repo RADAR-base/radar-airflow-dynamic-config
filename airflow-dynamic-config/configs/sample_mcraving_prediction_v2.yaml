@@ -15,7 +15,7 @@ data:
       conn_id: kafka_staging
       project: STAGING_PROJECT
       lookback_window: 3600 # 1 hour
-      format: json
+      format: avro
       topics:
         - s3-source-topic
 

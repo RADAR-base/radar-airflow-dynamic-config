@@ -1,6 +1,7 @@
 import argparse
-import io
+import json
 import logging
+import math
 import random
 import signal
 import threading
@@ -8,22 +9,143 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-import boto3
-from botocore.config import Config
-from botocore.exceptions import ClientError
-from fastavro import parse_schema, writer
 import yaml
+from confluent_kafka import SerializingProducer
+from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry.avro import AvroSerializer
+from confluent_kafka.serialization import StringSerializer
 
+# Avro schema mirroring the Empatica EmbracePlus raw-data export format.
+# Named records (Version, ImuStream, FloatStream) are defined once and
+# referenced by name where the same shape repeats.
 AVRO_SCHEMA = {
-    "name": "radar_record",
     "type": "record",
+    "name": "EmpaticaRecord",
+    "namespace": "org.radarbase.empatica",
     "fields": [
-        {"name": "participant_id", "type": "string"},
-        {"name": "data_type", "type": "string"},
-        {"name": "timestamp", "type": "long"},
-        {"name": "payload", "type": {"type": "map", "values": "string"}, "default": {}},
+        {
+            "name": "schemaVersion",
+            "type": {
+                "type": "record",
+                "name": "Version",
+                "fields": [
+                    {"name": "major", "type": "int"},
+                    {"name": "minor", "type": "int"},
+                    {"name": "patch", "type": "int"},
+                ],
+            },
+        },
+        {"name": "fwVersion", "type": "Version"},
+        {"name": "hwVersion", "type": "Version"},
+        {"name": "algoVersion", "type": "Version"},
+        {"name": "timezone", "type": "int"},
+        {
+            "name": "enrollment",
+            "type": {
+                "type": "record",
+                "name": "Enrollment",
+                "fields": [
+                    {"name": "participantID", "type": "string"},
+                    {"name": "siteID", "type": "string"},
+                    {"name": "studyID", "type": "string"},
+                    {"name": "organizationID", "type": "string"},
+                ],
+            },
+        },
+        {"name": "deviceSn", "type": "string"},
+        {"name": "deviceModel", "type": "string"},
+        {
+            "name": "rawData",
+            "type": {
+                "type": "record",
+                "name": "RawData",
+                "fields": [
+                    {
+                        "name": "accelerometer",
+                        "type": {
+                            "type": "record",
+                            "name": "ImuStream",
+                            "fields": [
+                                {"name": "timestampStart", "type": "long"},
+                                {"name": "samplingFrequency", "type": "double"},
+                                {
+                                    "name": "imuParams",
+                                    "type": {
+                                        "type": "record",
+                                        "name": "ImuParams",
+                                        "fields": [
+                                            {"name": "physicalMin", "type": "int"},
+                                            {"name": "physicalMax", "type": "int"},
+                                            {"name": "digitalMin", "type": "int"},
+                                            {"name": "digitalMax", "type": "int"},
+                                        ],
+                                    },
+                                },
+                                {"name": "x", "type": {"type": "array", "items": "int"}},
+                                {"name": "y", "type": {"type": "array", "items": "int"}},
+                                {"name": "z", "type": {"type": "array", "items": "int"}},
+                            ],
+                        },
+                    },
+                    {"name": "gyroscope", "type": "ImuStream"},
+                    {
+                        "name": "eda",
+                        "type": {
+                            "type": "record",
+                            "name": "FloatStream",
+                            "fields": [
+                                {"name": "timestampStart", "type": "long"},
+                                {"name": "samplingFrequency", "type": "double"},
+                                {"name": "values", "type": {"type": "array", "items": "float"}},
+                            ],
+                        },
+                    },
+                    {"name": "temperature", "type": "FloatStream"},
+                    {
+                        "name": "tags",
+                        "type": {
+                            "type": "record",
+                            "name": "Tags",
+                            "fields": [
+                                {"name": "tagsTimeMicros", "type": {"type": "array", "items": "long"}},
+                            ],
+                        },
+                    },
+                    {"name": "bvp", "type": "FloatStream"},
+                    {
+                        "name": "systolicPeaks",
+                        "type": {
+                            "type": "record",
+                            "name": "SystolicPeaks",
+                            "fields": [
+                                {"name": "peaksTimeNanos", "type": {"type": "array", "items": "long"}},
+                            ],
+                        },
+                    },
+                    {
+                        "name": "steps",
+                        "type": {
+                            "type": "record",
+                            "name": "StepStream",
+                            "fields": [
+                                {"name": "timestampStart", "type": "long"},
+                                {"name": "samplingFrequency", "type": "double"},
+                                {"name": "values", "type": {"type": "array", "items": "int"}},
+                            ],
+                        },
+                    },
+                ],
+            },
+        },
     ],
 }
+
+# Nominal sampling rates of each Empatica EmbracePlus stream, in Hz.
+ACCEL_HZ = 63.999622
+EDA_HZ = 3.9988773
+TEMPERATURE_HZ = 0.9997099
+BVP_HZ = 64.0
+STEPS_HZ = 0.21359096
 
 
 def load_config(path: str) -> Dict[str, Any]:
@@ -41,78 +163,187 @@ def setup_logging(config: Dict[str, Any]) -> None:
     logging.basicConfig(level=level, format=log_format)
 
 
-def resolve_s3_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    base_config = dict(config.get("s3", {}) or {})
+def resolve_kafka_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    base_config = dict(config.get("kafka", {}) or {})
     environment_name = config.get("environment")
     environments = config.get("environments", {}) or {}
     if environment_name and environment_name in environments:
-        env_s3 = environments[environment_name].get("s3", {}) or {}
-        base_config.update(env_s3)
+        env_kafka = environments[environment_name].get("kafka", {}) or {}
+        base_config.update(env_kafka)
     return base_config
 
 
-def create_s3_client(s3_config: Dict[str, Any]):
-    config = Config(s3={"addressing_style": "path"})
-    return boto3.client(
-        "s3",
-        region_name=s3_config.get("region"),
-        endpoint_url=s3_config.get("endpoint_url"),
-        aws_access_key_id=s3_config.get("access_key"),
-        aws_secret_access_key=s3_config.get("secret_key"),
-        config=config,
+def delivery_report(err, msg) -> None:
+    if err is not None:
+        logging.getLogger("data_generator.delivery").error(
+            "Delivery failed for key %s: %s", msg.key(), err
+        )
+
+
+def create_producer(kafka_config: Dict[str, Any], schema_str: str) -> SerializingProducer:
+    schema_registry_client = SchemaRegistryClient({"url": kafka_config["schema_registry_url"]})
+    avro_serializer = AvroSerializer(schema_registry_client, schema_str)
+    return SerializingProducer(
+        {
+            "bootstrap.servers": kafka_config["bootstrap_servers"],
+            "key.serializer": StringSerializer("utf_8"),
+            "value.serializer": avro_serializer,
+        }
     )
-
-
-def ensure_bucket(client, bucket: str) -> None:
-    try:
-        client.head_bucket(Bucket=bucket)
-    except ClientError:
-        client.create_bucket(Bucket=bucket)
 
 
 def format_participant_ids(generator: Dict[str, Any]) -> List[str]:
     num_participants = int(generator.get("num_participants", 1))
+    prefix = generator.get("participant_prefix", "participant")
     width = int(generator.get("participant_id_width", 4))
-    return [f"{index:0{width}d}" for index in range(1, num_participants + 1)]
+    return [f"{prefix}-{index:0{width}d}" for index in range(1, num_participants + 1)]
 
 
-def build_payload(data_type: str) -> Dict[str, str]:
-    if data_type == "empatica":
-        metric = random.choice(["eda", "bvp", "accel", "temp"])
-        value = random.uniform(0.05, 4.5)
-        unit = random.choice(["uS", "ms", "g", "c"])
-        return {
-            "metric": metric,
-            "value": f"{value:.4f}",
-            "unit": unit,
-        }
+def sample_count(frequency: float, duration_seconds: float) -> int:
+    return max(1, int(round(frequency * duration_seconds)))
+
+
+def build_imu_stream(start_micros: int, duration_seconds: float) -> Dict[str, Any]:
+    count = sample_count(ACCEL_HZ, duration_seconds)
+    # Centre each axis on the resting baselines seen in real exports and
+    # add small gaussian jitter so consecutive samples look plausible.
+    axes = {}
+    for axis, baseline in (("x", 710), ("y", 1305), ("z", 1448)):
+        axes[axis] = [int(round(random.gauss(baseline, 10))) for _ in range(count)]
     return {
-        "value": f"{random.random():.4f}",
+        "timestampStart": start_micros,
+        "samplingFrequency": ACCEL_HZ,
+        "imuParams": {
+            "physicalMin": -16,
+            "physicalMax": 16,
+            "digitalMin": -32768,
+            "digitalMax": 32768,
+        },
+        **axes,
     }
 
 
-def build_object_key(prefix: str, data_type: str, participant_id: str, timestamp: datetime) -> str:
-    cleaned_prefix = prefix.strip("/")
-    date_part = timestamp.strftime("%Y-%m-%d")
-    time_part = timestamp.strftime("%Y%m%dT%H%M%S%fZ")
-    path_parts = [part for part in [cleaned_prefix, data_type,
-                                    f"{participant_id}",
-                                    f"{date_part}"] if part]
-    path = "/".join(path_parts)
-    return f"{path}/{time_part}.avro"
+def build_empty_imu_stream() -> Dict[str, Any]:
+    # The EmbracePlus export ships gyroscope as an empty, zeroed stream.
+    return {
+        "timestampStart": 0,
+        "samplingFrequency": 0.0,
+        "imuParams": {
+            "physicalMin": 0,
+            "physicalMax": 0,
+            "digitalMin": 0,
+            "digitalMax": 0,
+        },
+        "x": [],
+        "y": [],
+        "z": [],
+    }
 
 
-def generate_avro_bytes(record: Dict[str, Any], schema) -> bytes:
-    buffer = io.BytesIO()
-    writer(buffer, schema, [record])
-    return buffer.getvalue()
+def build_eda_stream(start_micros: int, duration_seconds: float) -> Dict[str, Any]:
+    count = sample_count(EDA_HZ, duration_seconds)
+    value = -0.01
+    values = []
+    for _ in range(count):
+        value += random.gauss(0.0, 0.0003)
+        values.append(value)
+    return {
+        "timestampStart": start_micros,
+        "samplingFrequency": EDA_HZ,
+        "values": values,
+    }
+
+
+def build_temperature_stream(start_micros: int, duration_seconds: float) -> Dict[str, Any]:
+    count = sample_count(TEMPERATURE_HZ, duration_seconds)
+    # Quantised to the device's ~1/128 C resolution around a resting value.
+    values = [round(random.gauss(21.68, 0.02) * 128) / 128 for _ in range(count)]
+    return {
+        "timestampStart": start_micros,
+        "samplingFrequency": TEMPERATURE_HZ,
+        "values": values,
+    }
+
+
+def build_bvp_stream(start_micros: int, duration_seconds: float) -> Dict[str, Any]:
+    count = sample_count(BVP_HZ, duration_seconds)
+    # A ~1 Hz pulse waveform (heart beat) with low-amplitude noise.
+    values = []
+    for index in range(count):
+        phase = 2 * math.pi * index / BVP_HZ
+        values.append(0.001 * math.sin(phase) + random.gauss(0.0, 0.00005))
+    return {
+        "timestampStart": start_micros,
+        "samplingFrequency": BVP_HZ,
+        "values": values,
+    }
+
+
+def build_systolic_peaks(start_micros: int, duration_seconds: float) -> Dict[str, Any]:
+    # One systolic peak roughly every 0.6 s, jittered, expressed in nanos.
+    peaks = []
+    t = start_micros * 1000
+    end = (start_micros + int(duration_seconds * 1_000_000)) * 1000
+    while t < end:
+        peaks.append(int(t))
+        t += int(random.uniform(0.5, 0.7) * 1_000_000_000)
+    return {"peaksTimeNanos": peaks}
+
+
+def build_steps_stream(start_micros: int, duration_seconds: float) -> Dict[str, Any]:
+    count = sample_count(STEPS_HZ, duration_seconds)
+    # Mostly stationary, with the occasional step count.
+    values = [random.choice([0, 0, 0, 0, 1]) for _ in range(count)]
+    return {
+        "timestampStart": start_micros,
+        "samplingFrequency": STEPS_HZ,
+        "values": values,
+    }
+
+
+def random_device_serial() -> str:
+    return "".join(random.choice("0123456789ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(10))
+
+
+def build_empatica_record(
+    participant_id: str,
+    generator_config: Dict[str, Any],
+    now: datetime,
+) -> Dict[str, Any]:
+    duration_seconds = float(generator_config.get("duration_seconds", 10))
+    enrollment = generator_config.get("enrollment", {}) or {}
+    start_micros = int(now.timestamp() * 1_000_000)
+    return {
+        "schemaVersion": {"major": 6, "minor": 3, "patch": 0},
+        "fwVersion": {"major": 3, "minor": 3, "patch": 3},
+        "hwVersion": {"major": 6, "minor": 0, "patch": 2},
+        "algoVersion": {"major": 6, "minor": 4, "patch": 1},
+        "timezone": int(generator_config.get("timezone", 0)),
+        "enrollment": {
+            "participantID": participant_id,
+            "siteID": str(enrollment.get("siteID", "")),
+            "studyID": str(enrollment.get("studyID", "")),
+            "organizationID": str(enrollment.get("organizationID", "")),
+        },
+        "deviceSn": random_device_serial(),
+        "deviceModel": str(generator_config.get("device_model", "EMBRACEPLUS")),
+        "rawData": {
+            "accelerometer": build_imu_stream(start_micros, duration_seconds),
+            "gyroscope": build_empty_imu_stream(),
+            "eda": build_eda_stream(start_micros, duration_seconds),
+            "temperature": build_temperature_stream(start_micros, duration_seconds),
+            "tags": {"tagsTimeMicros": []},
+            "bvp": build_bvp_stream(start_micros, duration_seconds),
+            "systolicPeaks": build_systolic_peaks(start_micros, duration_seconds),
+            "steps": build_steps_stream(start_micros, duration_seconds),
+        },
+    }
 
 
 def run_generator(
     generator_config: Dict[str, Any],
-    schema,
-    client,
-    bucket: str,
+    producer: SerializingProducer,
+    default_topic: str,
     stop_event: threading.Event,
 ) -> None:
     logger = logging.getLogger(f"generator.{generator_config.get('data_type', 'unknown')}")
@@ -127,11 +358,12 @@ def run_generator(
     interval = float(generator_config.get("interval", 60))
     records_per_interval = int(generator_config.get("records_per_interval", 1))
     data_type = generator_config.get("data_type", "unknown")
-    prefix = generator_config.get("path", "")
+    topic = generator_config.get("topic", default_topic)
 
     logger.info(
-        "Starting generator: data_type=%s interval=%s records_per_interval=%s participants=%s",
+        "Starting generator: data_type=%s topic=%s interval=%s records_per_interval=%s participants=%s",
         data_type,
+        topic,
         interval,
         records_per_interval,
         len(participants),
@@ -141,27 +373,21 @@ def run_generator(
         for _ in range(records_per_interval):
             participant_id = random.choice(participants)
             now = datetime.now(timezone.utc)
-            record = {
-                "participant_id": participant_id,
-                "data_type": data_type,
-                "timestamp": int(now.timestamp() * 1000),
-                "payload": build_payload(data_type),
-            }
-            object_key = build_object_key(prefix, data_type, participant_id, now)
-            payload_bytes = generate_avro_bytes(record, schema)
-            client.put_object(
-                Bucket=bucket,
-                Key=object_key,
-                Body=payload_bytes,
-                ContentType="application/avro-binary",
+            record = build_empatica_record(participant_id, generator_config, now)
+            producer.produce(
+                topic=topic,
+                key=participant_id,
+                value=record,
+                on_delivery=delivery_report,
             )
-            logger.info("Uploaded %s", object_key)
+            producer.poll(0)
+            logger.info("Produced record for %s to %s", participant_id, topic)
 
         stop_event.wait(interval)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="S3 Avro data generator")
+    parser = argparse.ArgumentParser(description="Kafka Empatica Avro data generator")
     parser.add_argument("--config", default="config.yaml")
     args = parser.parse_args()
 
@@ -169,15 +395,16 @@ def main() -> None:
     setup_logging(config)
 
     logger = logging.getLogger("data_generator")
-    s3_config = resolve_s3_config(config)
-    bucket = s3_config.get("bucket")
-    if not bucket:
-        raise ValueError("S3 bucket is required in config")
+    kafka_config = resolve_kafka_config(config)
+    if not kafka_config.get("bootstrap_servers"):
+        raise ValueError("Kafka bootstrap_servers is required in config")
+    if not kafka_config.get("schema_registry_url"):
+        raise ValueError("Kafka schema_registry_url is required in config")
+    default_topic = kafka_config.get("topic")
+    if not default_topic:
+        raise ValueError("Kafka topic is required in config")
 
-    client = create_s3_client(s3_config)
-    ensure_bucket(client, bucket)
-
-    schema = parse_schema(AVRO_SCHEMA)
+    producer = create_producer(kafka_config, json.dumps(AVRO_SCHEMA))
     stop_event = threading.Event()
 
     def handle_shutdown(*_args):
@@ -192,7 +419,7 @@ def main() -> None:
     for generator_config in generators:
         thread = threading.Thread(
             target=run_generator,
-            args=(generator_config, schema, client, bucket, stop_event),
+            args=(generator_config, producer, default_topic, stop_event),
             daemon=True,
         )
         thread.start()
@@ -206,6 +433,9 @@ def main() -> None:
 
     for thread in threads:
         thread.join()
+
+    logger.info("Flushing pending messages...")
+    producer.flush()
 
 
 if __name__ == "__main__":
