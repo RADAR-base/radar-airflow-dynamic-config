@@ -12,6 +12,7 @@ class DataReaderFactory:
                 poll_timeout=kwargs.get('poll_timeout', 5),
                 format=kwargs.get('format', 'json'),
                 lookback_window=kwargs.get('lookback_window', None),
+                schema_registry_url=kwargs.get('schema_registry_url', None),
             )
         else:
             raise ValueError(f"Unsupported reader type: {reader_type}")

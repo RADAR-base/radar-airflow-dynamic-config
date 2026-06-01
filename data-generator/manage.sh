@@ -56,7 +56,7 @@ Options:
 Examples:
     $0 start                    # Start all services
     $0 logs --follow           # Follow data generator logs
-    $0 airflow-logs --service webserver --follow  # Follow Airflow webserver logs
+    $0 airflow-logs --service apiserver --follow  # Follow Airflow API server logs
     $0 consume --topic user-events  # Consume from user-events topic
     $0 topics                  # List all Kafka topics
     $0 flower                  # Start Flower monitoring
@@ -127,14 +127,14 @@ start_services() {
     sleep 10
     
     # Start Airflow infrastructure
-    docker-compose up -d airflow-postgres airflow-redis
+    docker-compose up -d postgres redis
     sleep 10
     
     # Initialize Airflow
     docker-compose up airflow-init
     
     # Start Airflow services
-    docker-compose up -d airflow-webserver airflow-scheduler airflow-worker airflow-triggerer
+    docker-compose up -d airflow-apiserver airflow-scheduler airflow-dag-processor airflow-worker airflow-triggerer
     sleep 10
     
     # Wait for Kafka and create topics
@@ -227,7 +227,7 @@ show_airflow_logs() {
     cd "$PROJECT_DIR"
     
     if [ -z "$service" ]; then
-        log_info "Available Airflow services: webserver, scheduler, worker, triggerer, postgres, redis"
+        log_info "Available Airflow services: apiserver, scheduler, dag-processor, worker, triggerer"
         log_error "Please specify a service with --service SERVICE_NAME"
         exit 1
     fi
@@ -252,13 +252,13 @@ reset_airflow() {
     echo
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
-        docker-compose stop airflow-webserver airflow-scheduler airflow-worker airflow-triggerer
-        docker-compose down airflow-postgres
-        docker volume rm "${PWD##*/}_airflow-postgres-db-volume" 2>/dev/null || true
-        docker-compose up -d airflow-postgres
+        docker-compose stop postgres airflow-apiserver airflow-scheduler airflow-dag-processor airflow-worker airflow-triggerer
+        docker-compose rm -f postgres 2>/dev/null || true
+        docker volume rm "${PWD##*/}_postgres-db-volume" 2>/dev/null || true
+        docker-compose up -d postgres
         sleep 10
         docker-compose up airflow-init
-        docker-compose up -d airflow-webserver airflow-scheduler airflow-worker airflow-triggerer
+        docker-compose up -d airflow-apiserver airflow-scheduler airflow-dag-processor airflow-worker airflow-triggerer
         log_info "Airflow database reset completed"
     else
         log_info "Reset cancelled"

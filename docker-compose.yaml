@@ -254,6 +254,8 @@ services:
     restart: always
     ports:
       - "5432:5432"
+    networks:
+      - default
 
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change

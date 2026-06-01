@@ -16,7 +16,5 @@ class PreprocessingTaskProcessor():
         for key, value in data.items():
             for topic, datum in value.items():
                 preprocessed_data += datum
-        df = pd.DataFrame(preprocessed_data)
-        logger.info(f"Data converted to DataFrame: {df}")
-        logger.info(f"Preprocessed data: {preprocessed_data}")
+        df = pd.json_normalize(preprocessed_data)
         return df.to_dict(orient='records')

@@ -27,6 +27,8 @@ data:
       project: STAGING_PROJECT
       topics:
         - s3-source-topic
+    format: avro
+    schema_registry_url: "http://schema-registry-1:8081"
     depends_on:
       - craving_prediction_sensor
 
