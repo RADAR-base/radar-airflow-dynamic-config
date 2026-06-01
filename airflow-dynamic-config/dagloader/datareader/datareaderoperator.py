@@ -52,8 +52,14 @@ class DataReaderOperator(BaseOperator):
         self._resolve_config()
 
     def execute(self, context):
+        reader_kwargs = dict(self.reader_kwargs)
+        # Give each DAG/source its own consumer group so offsets don't overlap
+        # with other DAGs or external consumers sharing the connection's group.
+        if self.source_type == 'kafka' and not reader_kwargs.get('group_id'):
+            dag_id = getattr(self, 'dag_id', None) or 'radar'
+            reader_kwargs['group_id'] = f"{dag_id}.{self.source_name}"
         reader = DataReaderFactory.get_data_reader(
-            self.source_type, **self.reader_kwargs
+            self.source_type, **reader_kwargs
         )
         data = reader.read_data()
         self.intermediate_storage.save(self.source_name, data)

@@ -13,6 +13,7 @@ class DataReaderFactory:
                 format=kwargs.get('format', 'json'),
                 lookback_window=kwargs.get('lookback_window', None),
                 schema_registry_url=kwargs.get('schema_registry_url', None),
+                group_id=kwargs.get('group_id', None),
             )
         else:
             raise ValueError(f"Unsupported reader type: {reader_type}")
