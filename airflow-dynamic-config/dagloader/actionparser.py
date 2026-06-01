@@ -145,10 +145,18 @@ class ActionOperator(BaseOperator):
         self.intermediate_storage = intermediate_storage
         self._initial_action_config = copy.deepcopy(action_config) or {}
         self.action_config = copy.deepcopy(self._initial_action_config)
+        self.kafka_conn_id = self.action_config.get('config',
+                                                    {}).get('kafka_conn_id',
+                                                            'kafka_default')
+        self.kafka_topic = self.action_config.get('config',
+                                                  {}).get('topic',
+                                                          'output_topic')
         self._resolve_config()
 
     def _resolve_config(self):
-        self.action_parser = ActionParser(self.action_config)
+        self.action_parser = ActionParser(self.action_config,
+                                          output_topic=self.kafka_topic,
+                                          kafka_conn_id=self.kafka_conn_id)
         self.key = f"{self.action_config.get('name', '')}_condition"
         self.writer = KafkaWriter(
             topic=self.action_parser.OUTPUT_TOPIC,
@@ -176,6 +184,10 @@ class ActionOperator(BaseOperator):
             f"{sorted(override.keys())}"
         )
         self.action_config = new_action_config
+        self.kafka_conn_id = self.action_config.get('config', {}).get('kafka_conn_id',
+                                                                'kafka_default')
+        self.kafka_topic = self.action_config.get('config', {}).get('topic',
+                                                            'output_topic')
         self._resolve_config()
 
     def execute(self, context):
