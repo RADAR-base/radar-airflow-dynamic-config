@@ -2,6 +2,7 @@ from dagloader.intermediatestorage.storage import Storage
 from dagloader.intermediatestorage.localstorage import LocalStorage
 from dagloader.intermediatestorage.s3storage import S3Storage
 from dagloader.intermediatestorage.sqlstorage import SQLStorage
+from dagloader.intermediatestorage.postgresstorage import PostgresStorage
 
 
 class StorageFactory:
@@ -14,5 +15,9 @@ class StorageFactory:
             return S3Storage(**kwargs)
         elif storage_type_normalized == 'sql':
             return SQLStorage(**kwargs)
+        elif storage_type_normalized in (
+            'postgres', 'postgresql', 'timescaledb'
+        ):
+            return PostgresStorage(**kwargs)
         else:
             raise ValueError(f"Unsupported storage type: {storage_type}")

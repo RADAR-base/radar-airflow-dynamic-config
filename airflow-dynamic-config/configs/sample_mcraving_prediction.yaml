@@ -2,10 +2,9 @@ model_name: craving_prediction_model
 model_description: Sample config to demonstrate craving prediction model
 schedule: "*/1 * * * *" # every 10 mins
 intermediate_results_storage:
-  type: SQL
+  type: timescaledb
   config:
     conn_id: timescale_staging
-    database: intermediate_results_db
     table_prefix: craving_data
 
 sensor:
@@ -26,8 +25,7 @@ data:
       conn_id: kafka_staging
       project: STAGING_PROJECT
       lookback_window: 3600 # 1 hour
-      format: avro
-      schema_registry_url: "http://cp-schema-registry:8081"
+      format: json
       topics:
         - s3-source-topic
     depends_on:

@@ -2,10 +2,9 @@ model_name: craving_prediction_model_v3
 model_description: Sample config to demonstrate craving prediction model
 schedule: "*/10 * * * *" # every 10 mins
 intermediate_results_storage:
-  type: SQL
+  type: timescaledb
   config:
     conn_id: timescale_staging
-    database: intermediate_results_db
     table_prefix: craving_data
 
 data:
