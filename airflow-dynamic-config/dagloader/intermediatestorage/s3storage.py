@@ -13,6 +13,6 @@ class S3Storage(Storage):
         # Code to save data to S3 bucket
         pass
 
-    def load(self, key: str) -> Any:
+    def load(self, key: str, scoped: bool = True) -> Any:
         # Code to load data from S3 bucket
         pass

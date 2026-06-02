@@ -66,7 +66,10 @@ class BackoffFilter:
 
     def _load_state(self) -> Dict[str, datetime]:
         try:
-            raw = self.storage.load(self.storage_key)
+            # Backoff state is intentionally cross-run: it tracks when each
+            # key last fired so it can rate-limit across DAG runs. Load it
+            # unscoped so a new run sees the previous runs' state.
+            raw = self.storage.load(self.storage_key, scoped=False)
         except FileNotFoundError:
             return {}
         if not isinstance(raw, dict):

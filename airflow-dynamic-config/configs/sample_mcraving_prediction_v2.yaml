@@ -6,6 +6,7 @@ intermediate_results_storage:
   config:
     conn_id: timescale_staging
     table_prefix: craving_data
+    hypertable: false
 
 data:
   - name: mcraving_empatica_data

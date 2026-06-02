@@ -67,15 +67,22 @@ class PostgresStorage(Storage):
         hook.run(f"CREATE SCHEMA IF NOT EXISTS {schema}")
         # created_at is part of the primary key because TimescaleDB requires
         # the partitioning column to be included in any unique/primary key.
+        # run_id identifies the DAG run that produced the snapshot so that
+        # concurrent/overlapping runs do not read each other's data.
         hook.run(
             f"""
             CREATE TABLE IF NOT EXISTS {qualified} (
                 id BIGSERIAL,
                 payload BYTEA NOT NULL,
+                run_id TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 PRIMARY KEY (id, created_at)
             )
             """
+        )
+        hook.run(
+            f"CREATE INDEX IF NOT EXISTS "
+            f"{table_name}_run_id_idx ON {qualified} (run_id)"
         )
         if self.hypertable:
             try:
@@ -96,18 +103,26 @@ class PostgresStorage(Storage):
         payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
         hook = self._hook()
         hook.run(
-            f"INSERT INTO {self._qualified(table_name)} (payload) VALUES (%s)",
-            parameters=(payload,),
+            f"INSERT INTO {self._qualified(table_name)} "
+            f"(payload, run_id) VALUES (%s, %s)",
+            parameters=(payload, self._effective_run_id()),
         )
 
-    def load(self, key: str) -> Any:
+    def load(self, key: str, scoped: bool = True) -> Any:
         table_name = self._table_name_for_key(key)
         self._ensure_table_exists(table_name)
         hook = self._hook()
-        row = hook.get_first(
-            f"SELECT payload FROM {self._qualified(table_name)} "
-            f"ORDER BY created_at DESC, id DESC LIMIT 1"
-        )
+        qualified = self._qualified(table_name)
+        order = "ORDER BY created_at DESC, id DESC LIMIT 1"
+        run_id = self._effective_run_id()
+        if scoped and run_id is not None:
+            row = hook.get_first(
+                f"SELECT payload FROM {qualified} "
+                f"WHERE run_id = %s {order}",
+                parameters=(run_id,),
+            )
+        else:
+            row = hook.get_first(f"SELECT payload FROM {qualified} {order}")
         if row is None:
             raise FileNotFoundError(f"No data found for key: {key}")
         payload = row[0]

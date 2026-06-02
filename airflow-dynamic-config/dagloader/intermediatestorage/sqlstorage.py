@@ -43,7 +43,8 @@ class SQLStorage(Storage):
                 f"""
                 CREATE TABLE IF NOT EXISTS {table_name} (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    payload BLOB NOT NULL
+                    payload BLOB NOT NULL,
+                    run_id TEXT
                 )
                 """
             )
@@ -56,20 +57,28 @@ class SQLStorage(Storage):
         with self._connect() as conn:
             conn.execute(
                 f"""
-                INSERT INTO {table_name} (payload)
-                VALUES (?)
+                INSERT INTO {table_name} (payload, run_id)
+                VALUES (?, ?)
                 """,
-                (payload,)
+                (payload, self._effective_run_id())
             )
             conn.commit()
 
-    def load(self, key: str) -> Any:
+    def load(self, key: str, scoped: bool = True) -> Any:
         table_name = self._table_name_for_key(key)
         self._ensure_table_exists(table_name)
+        run_id = self._effective_run_id()
         with self._connect() as conn:
-            cursor = conn.execute(
-                f"SELECT payload FROM {table_name} ORDER BY id DESC LIMIT 1"
-            )
+            if scoped and run_id is not None:
+                cursor = conn.execute(
+                    f"SELECT payload FROM {table_name} "
+                    f"WHERE run_id = ? ORDER BY id DESC LIMIT 1",
+                    (run_id,)
+                )
+            else:
+                cursor = conn.execute(
+                    f"SELECT payload FROM {table_name} ORDER BY id DESC LIMIT 1"
+                )
             row = cursor.fetchone()
 
         if row is None:
