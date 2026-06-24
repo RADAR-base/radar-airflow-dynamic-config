@@ -1,4 +1,5 @@
 from dagloader.intermediatestorage.storage import Storage
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 import pickle
 from typing import Any
 import logging
@@ -54,7 +55,6 @@ class PostgresStorage(Storage):
         return f"{self._sanitize_identifier(self.schema)}.{table_name}"
 
     def _hook(self):
-        from airflow.providers.postgres.hooks.postgres import PostgresHook
         kwargs = {"postgres_conn_id": self.conn_id}
         if self.database:
             kwargs["database"] = self.database
