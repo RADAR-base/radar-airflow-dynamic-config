@@ -5,7 +5,7 @@ intermediate_results_storage:
   type: timescaledb
   config:
     conn_id: timescale_staging
-    table_prefix: craving_data_v2
+    table_prefix: craving_data_test
     hypertable: false
 
 sensor:
@@ -25,7 +25,7 @@ data:
     config:
       conn_id: kafka_staging
       project: STAGING_PROJECT
-      lookback_window: 3600 # 1 hour
+      lookback_window: 7200 # 2 hours
       format: json
       topics:
         - s3-source-topic
@@ -36,14 +36,14 @@ tasks:
   - name: preprocessing_task
     type: custom
     enabled: true
-    path: custom/mcraving_pipeline/preprocessing.py
+    path: custom/mcravings/preprocessing.py
     depends_on:
       - mcraving_empatica_data
 
   - name: craving_prediction_task
     type: custom
     enabled: true
-    path: custom/mcraving_pipeline/prediction.py
+    path: custom/mcravings/prediction.py
     depends_on:
       - preprocessing_task
 

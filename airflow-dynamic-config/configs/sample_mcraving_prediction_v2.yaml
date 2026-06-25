@@ -24,14 +24,14 @@ tasks:
   - name: preprocessing_task
     type: custom
     enabled: true
-    path: custom/mcraving_pipeline/preprocessing.py
+    path: custom/mcravings/preprocessing.py
     depends_on:
       - mcraving_empatica_data
 
   - name: craving_prediction_task
     type: custom
     enabled: true
-    path: custom/mcraving_pipeline/prediction.py
+    path: custom/mcravings/prediction.py
     depends_on:
       - preprocessing_task
 
@@ -44,13 +44,13 @@ actions:
       - craving_prediction_task
     time: "immediate"
     config:
-      message: "Craving predicted for participant: {{ craving_prediction_task.enrollment.participantID }}"
+      message: "Craving predicted for participant: {{ craving_prediction_task.participant_id}}"
       topic: "output_topic"
       kafka_conn_id: kafka_staging
       backoff:
         enabled: false
         interval: 7200 # 2 hour
-        backoff_key: "enrollment.participantID"
+        backoff_key: "participant_id"
         backoff_strategy: "fixed"
         max_messages: 3
         max_messages_units: "day"

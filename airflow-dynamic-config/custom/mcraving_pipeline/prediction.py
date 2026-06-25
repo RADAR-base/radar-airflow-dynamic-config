@@ -7,7 +7,7 @@ class PredictionTaskProcessor():
         super().__init__()
 
     def execute(self, data):
-        logger.info(f"Predicting with data: {data}")
+        #logger.info(f"Predicting with data: {data}")
         dfs = []
         for data_sources in data.values():
             if isinstance(data_sources, list):

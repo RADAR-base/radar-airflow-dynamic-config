@@ -52,6 +52,11 @@ services:
       KAFKA_COMPRESSION_TYPE: lz4
       KAFKA_INTER_BROKER_PROTOCOL_VERSION: "2.0"
       KAFKA_LOG_MESSAGE_FORMAT_VERSION: "2.0"
+      # Allow records up to 10 MiB (a 30-min Empatica record is ~1.2 MB).
+      # message.max.bytes sets the per-topic ceiling auto-created topics inherit;
+      # replica.fetch.max.bytes must be >= it so replication can copy them.
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 10485760
       KAFKA_CONFLUENT_SUPPORT_METRICS_ENABLE: "false"
 
   kafka-2:
@@ -71,6 +76,11 @@ services:
       KAFKA_COMPRESSION_TYPE: lz4
       KAFKA_INTER_BROKER_PROTOCOL_VERSION: "2.0"
       KAFKA_LOG_MESSAGE_FORMAT_VERSION: "2.0"
+      # Allow records up to 10 MiB (a 30-min Empatica record is ~1.2 MB).
+      # message.max.bytes sets the per-topic ceiling auto-created topics inherit;
+      # replica.fetch.max.bytes must be >= it so replication can copy them.
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 10485760
       KAFKA_CONFLUENT_SUPPORT_METRICS_ENABLE: "false"
 
   kafka-3:
@@ -90,6 +100,11 @@ services:
       KAFKA_COMPRESSION_TYPE: lz4
       KAFKA_INTER_BROKER_PROTOCOL_VERSION: "2.0"
       KAFKA_LOG_MESSAGE_FORMAT_VERSION: "2.0"
+      # Allow records up to 10 MiB (a 30-min Empatica record is ~1.2 MB).
+      # message.max.bytes sets the per-topic ceiling auto-created topics inherit;
+      # replica.fetch.max.bytes must be >= it so replication can copy them.
+      KAFKA_MESSAGE_MAX_BYTES: 10485760
+      KAFKA_REPLICA_FETCH_MAX_BYTES: 10485760
       KAFKA_CONFLUENT_SUPPORT_METRICS_ENABLE: "false"
 
   #---------------------------------------------------------------------------#
@@ -132,6 +147,9 @@ services:
       KAFKA_GROUP_MIN_SESSION_TIMEOUT_MS: 5000
       KAFKA_AUTO_COMMIT_INTERVAL_MS: 300
       KAFKA_REST_COMPRESSION_TYPE: lz4
+      # Let consumers fetch the larger (up to 10 MiB) records in one partition fetch.
+      KAFKA_REST_CONSUMER_REQUEST_MAX_BYTES: 10485760
+      KAFKA_REST_CONSUMER_FETCH_MAX_BYTES: 10485760
 
   #---------------------------------------------------------------------------#
   # Data Generator                                                            #
@@ -177,6 +195,9 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry-1:8081
+      # Match the broker ceiling so kafka-ui can read the larger records.
+      KAFKA_CLUSTERS_0_PROPERTIES_MAX_PARTITION_FETCH_BYTES: 10485760
+      KAFKA_CLUSTERS_0_PROPERTIES_FETCH_MAX_BYTES: 10485760
     depends_on:
       - kafka-1
       - kafka-2

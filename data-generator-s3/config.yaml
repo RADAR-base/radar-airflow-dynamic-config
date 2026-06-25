@@ -15,14 +15,14 @@ environments:
 # Generator configurations
 generators:
   - data_type: "empatica"
-    interval: 60 # Time in seconds between data generation
+    interval: 1800 # Time in seconds between data generation (30 mins)
+    backfill_hours: 1 # On startup, backfill one record per participant for each interval slot in the last N hours
     enabled: true
-    num_participants: 10
-    records_per_interval: 3
+    num_participants: 3
     participant_prefix: ""
     participant_id_width: 4
     # Length of the sensor session captured in each generated record.
-    duration_seconds: 10
+    duration_seconds: 1800
     device_model: "EMBRACEPLUS"
     timezone: 3600
     enrollment:

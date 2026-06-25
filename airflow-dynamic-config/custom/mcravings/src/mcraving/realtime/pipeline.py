@@ -19,7 +19,9 @@ from mcraving.preprocess.acc import (
 )
 from mcraving.preprocess.eda import sparsEDA
 from mcraving.realtime.avro import load_avro_context, load_avro_record_context
+import logging
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class RealtimeSignals:
@@ -216,6 +218,7 @@ def _signals_to_feature_matrix(
         raise ValueError("window_minutes and step_minutes must be positive.")
     first_end = signals.latest_start + pd.Timedelta(minutes=step_minutes)
     first_start = first_end - pd.Timedelta(minutes=window_minutes)
+    logger.info(f"first_start: {first_start}, first_end: {first_end}, latest_end: {signals.latest_end}")
     if first_end > signals.latest_end:
         return pd.DataFrame()
 
@@ -279,6 +282,8 @@ def avro_records_to_feature_matrix(
     ``latest_records`` should be the record list from the newest AVRO file. If
     omitted, the final record in ``records`` is treated as the newest record.
     """
+    #logger.info(f"avro_records_to_feature_matrix called with {len(records)} records")
+    #logger.info(f"records: {records}")
     if window_minutes <= 0 or step_minutes <= 0:
         raise ValueError("window_minutes and step_minutes must be positive.")
     required_history = max(0, window_minutes - step_minutes)
@@ -292,6 +297,7 @@ def avro_records_to_feature_matrix(
         latest_records=latest_records,
         history_minutes=history_minutes,
     )
+    #logger.info(f"preprocessed signals size: {signals.shape[0]}")
     return _signals_to_feature_matrix(
         signals,
         participant_id=participant_id,

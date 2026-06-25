@@ -2,6 +2,9 @@
 numpy
 pandas
 scikit-learn
+xgboost
+numba
+fastavro
 apache-airflow-providers-apache-kafka
 apache-airflow-providers-amazon
 apache-airflow-providers-postgres
@@ -9,3 +12,4 @@ confluent-kafka[avro]
 apache-airflow
 pykwalify
 rule-engine
+scipy

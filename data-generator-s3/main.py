@@ -6,7 +6,7 @@ import random
 import signal
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 import yaml
@@ -183,11 +183,16 @@ def delivery_report(err, msg) -> None:
 def create_producer(kafka_config: Dict[str, Any], schema_str: str) -> SerializingProducer:
     schema_registry_client = SchemaRegistryClient({"url": kafka_config["schema_registry_url"]})
     avro_serializer = AvroSerializer(schema_registry_client, schema_str)
+    # A single 30-minute Empatica record serialises to ~1.2 MB, above
+    # librdkafka's 1 MB default, so raise the producer ceiling. Must stay in
+    # sync with the broker/topic/consumer limits (see docker-compose.yaml).
+    message_max_bytes = int(kafka_config.get("message_max_bytes", 10_485_760))
     return SerializingProducer(
         {
             "bootstrap.servers": kafka_config["bootstrap_servers"],
             "key.serializer": StringSerializer("utf_8"),
             "value.serializer": avro_serializer,
+            "message.max.bytes": message_max_bytes,
         }
     )
 
@@ -325,7 +330,7 @@ def build_empatica_record(
             "studyID": str(enrollment.get("studyID", "")),
             "organizationID": str(enrollment.get("organizationID", "")),
         },
-        "deviceSn": random_device_serial(),
+        "deviceSn": "TESTDEVICE",
         "deviceModel": str(generator_config.get("device_model", "EMBRACEPLUS")),
         "rawData": {
             "accelerometer": build_imu_stream(start_micros, duration_seconds),
@@ -355,33 +360,47 @@ def run_generator(
     if not participants:
         logger.warning("No participants configured; skipping generator.")
         return
-    interval = float(generator_config.get("interval", 60))
-    records_per_interval = int(generator_config.get("records_per_interval", 1))
+    interval = float(generator_config.get("interval", 1800))
+    backfill_hours = float(generator_config.get("backfill_hours", 2))
     data_type = generator_config.get("data_type", "unknown")
     topic = generator_config.get("topic", default_topic)
 
     logger.info(
-        "Starting generator: data_type=%s topic=%s interval=%s records_per_interval=%s participants=%s",
+        "Starting generator: data_type=%s topic=%s interval=%s backfill_hours=%s participants=%s",
         data_type,
         topic,
         interval,
-        records_per_interval,
+        backfill_hours,
         len(participants),
     )
 
+    def emit(participant_id: str, when: datetime) -> None:
+        record = build_empatica_record(participant_id, generator_config, when)
+        producer.produce(
+            topic=topic,
+            key=participant_id,
+            value=record,
+            on_delivery=delivery_report,
+        )
+        producer.poll(0)
+        logger.info("Produced record for %s at %s to %s", participant_id, when.isoformat(), topic)
+
+    interval_delta = timedelta(seconds=interval)
+    now = datetime.now(timezone.utc)
+
+    # Backfill: one record per participant for each interval slot across the
+    # last `backfill_hours`, oldest first (e.g. 2h / 30min -> 4 slots).
+    num_backfill_slots = int(round((backfill_hours * 3600) / interval)) if interval > 0 else 0
+    for slot in range(num_backfill_slots, 0, -1):
+        slot_time = now - slot * interval_delta
+        for participant_id in participants:
+            emit(participant_id, slot_time)
+
+    # Ongoing: one record per participant every `interval` seconds.
     while not stop_event.is_set():
-        for _ in range(records_per_interval):
-            participant_id = random.choice(participants)
-            now = datetime.now(timezone.utc)
-            record = build_empatica_record(participant_id, generator_config, now)
-            producer.produce(
-                topic=topic,
-                key=participant_id,
-                value=record,
-                on_delivery=delivery_report,
-            )
-            producer.poll(0)
-            logger.info("Produced record for %s to %s", participant_id, topic)
+        emit_time = datetime.now(timezone.utc)
+        for participant_id in participants:
+            emit(participant_id, emit_time)
 
         stop_event.wait(interval)
 
