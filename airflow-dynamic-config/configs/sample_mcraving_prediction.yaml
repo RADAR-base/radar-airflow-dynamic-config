@@ -5,7 +5,7 @@ intermediate_results_storage:
   type: timescaledb
   config:
     conn_id: timescale_staging
-    table_prefix: craving_data
+    table_prefix: craving_data_v2
     hypertable: false
 
 sensor:
