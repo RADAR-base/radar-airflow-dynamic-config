@@ -10,10 +10,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _nested_get(record, dotted_path):
+    """Resolve a dotted path (e.g. ``enrollment.participantID``) in a mapping,
+    returning None if any segment is missing."""
+    current = record
+    for segment in dotted_path.split('.'):
+        if not isinstance(current, dict) or segment not in current:
+            return None
+        current = current[segment]
+    return current
+
+
 class KafkaDataReader(DataReader):
     def __init__(self, conn_id: str, topics: list, max_messages=1000,
                  poll_timeout=5, format='json', lookback_window=None,
-                 schema_registry_url=None, group_id=None):
+                 schema_registry_url=None, group_id=None, key_filters=None):
         self.conn_id = conn_id
         self.topics = topics if isinstance(topics, list) else [topics]
         self.max_messages = max_messages
@@ -24,6 +35,10 @@ class KafkaDataReader(DataReader):
         # When set, overrides the connection's group.id so each DAG consumes
         # under its own group and does not share/steal offsets with others.
         self.group_id = group_id
+        # Optional list of ``{field: value}`` mappings: when set, only messages
+        # whose decoded payload matches one of them are kept. Used to restrict a
+        # read to the participant(s) whose data triggered this run.
+        self.key_filters = key_filters or []
         self._avro_deserializer = None
 
         if self.format == 'avro' and not self.schema_registry_url:
@@ -145,12 +160,25 @@ class KafkaDataReader(DataReader):
             consumer.close()
         return message_values
 
+    def _matches_key_filters(self, decoded) -> bool:
+        """True when no filters are set, or the decoded payload matches one.
+
+        A payload matches a filter when every ``field == value`` pair holds;
+        fields are resolved as dotted paths so nested records work."""
+        if not self.key_filters:
+            return True
+        for key_filter in self.key_filters:
+            if all(_nested_get(decoded, field) == value
+                   for field, value in key_filter.items()):
+                return True
+        return False
+
     def _handle_message(self, consumer, msg, topic):
-        """Validate, lookback-filter and decode a single message.
+        """Validate, lookback-filter, decode and key-filter a single message.
 
         Returns the decoded value, or None when the message is an error,
-        outside the lookback window (committed and skipped), or fails to
-        decode."""
+        outside the lookback window (committed and skipped), does not match the
+        configured key filters, or fails to decode."""
         if msg.error():
             logger.warning(f"Consumer error on topic {topic}: {msg.error()}")
             return None
@@ -160,7 +188,10 @@ class KafkaDataReader(DataReader):
                 # advances past it and it is not re-read on the next run.
                 consumer.commit(message=msg, asynchronous=False)
                 return None
-            return self._decode_value(msg, topic)
+            decoded = self._decode_value(msg, topic)
+            if decoded is not None and not self._matches_key_filters(decoded):
+                return None
+            return decoded
         except Exception as e:
             logger.warning(f"Error processing message from {topic}: {e}")
             return None

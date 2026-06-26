@@ -247,6 +247,12 @@ services:
       _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
       AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
       AIRFLOW__CORE__TEST_CONNECTION: 'Enabled'
+      # Put the dags folder on PYTHONPATH so the `dagloader` package is
+      # importable everywhere. The triggerer runs asset-watcher `apply_function`
+      # callables (e.g. dagloader.watchers.kafkatriggerfilter.match_by_keys) via
+      # import_string and does NOT add the dags folder to sys.path on its own,
+      # unlike the worker/dag-processor during DAG parsing.
+      PYTHONPATH: '/opt/airflow/dags'
     volumes:
       - ./airflow-dynamic-config:/opt/airflow/dags
       - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs

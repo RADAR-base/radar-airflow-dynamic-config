@@ -14,6 +14,7 @@ class DataReaderFactory:
                 lookback_window=kwargs.get('lookback_window', None),
                 schema_registry_url=kwargs.get('schema_registry_url', None),
                 group_id=kwargs.get('group_id', None),
+                key_filters=kwargs.get('key_filters', None),
             )
         else:
             raise ValueError(f"Unsupported reader type: {reader_type}")

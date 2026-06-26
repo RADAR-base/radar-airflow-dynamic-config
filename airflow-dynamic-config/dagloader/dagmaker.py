@@ -12,6 +12,7 @@ from dagloader.intermediatestorage.storagefactory import StorageFactory
 from dagloader.conditionparser import ConditionOperator
 from dagloader.actionparser import ActionOperator
 from dagloader.sensors.sensorfactory import SensorFactory
+from dagloader.watchers.watcherfactory import WatcherFactory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,6 +50,9 @@ class DAGMaker:
         self.model_name = self.config.get('model_name', 'unknown').lower()
         self.storage.init(directory_name=self.model_name)
         self.param_maker = ParamMaker(self.config)
+        # name -> Asset for each enabled watcher; populated in generate_dags and
+        # consumed when wiring data sources to their triggering assets.
+        self.watcher_assets: Dict[str, Any] = {}
 
     @staticmethod
     def _is_enabled(entry: Dict) -> bool:
@@ -76,6 +80,29 @@ class DAGMaker:
             nodes[name] = (operator, self._depends_on(sensor))
         return nodes
 
+    def _build_watcher_assets(self) -> Dict[str, Any]:
+        """Build one Airflow ``Asset`` per enabled watcher.
+
+        Watchers are not tasks: each becomes an event source the DAG is
+        scheduled on, so a matching Kafka message starts a new run rather than
+        a task running inside a run.
+        """
+        assets: Dict[str, Any] = {}
+        for watcher in self.config.get('watchers', []) or []:
+            if not self._is_enabled(watcher):
+                continue
+            name, watcher_type = watcher.get('name'), watcher.get('type')
+            if not name or not watcher_type:
+                logger.warning(f"Skipping watcher with invalid config: {watcher}")
+                continue
+            builder = WatcherFactory.get_watcher(
+                watcher_type=watcher_type,
+                name=name,
+                config=watcher.get('config', {}),
+            )
+            assets[name] = builder.build_asset(f"{self.model_name}__{name}")
+        return assets
+
     def _build_data(self) -> Dict[str, Node]:
         nodes: Dict[str, Node] = {}
         data_entries = self.config.get('data', []) or []
@@ -86,13 +113,22 @@ class DAGMaker:
             if not name:
                 logger.warning(f"Skipping data source with invalid config: {source}")
                 continue
+            depends_on = self._depends_on(source)
+            # Assets of the watchers this source depends on; the operator reads
+            # their event payloads at runtime to filter to the matched keys.
+            trigger_assets = [
+                self.watcher_assets[dep]
+                for dep in depends_on
+                if dep in self.watcher_assets
+            ]
             operator = DataReaderOperator(
                 task_id=name,
                 data_config=data_entries,
                 source_config=source,
                 intermediate_storage=self.storage,
+                trigger_assets=trigger_assets,
             )
-            nodes[name] = (operator, self._depends_on(source))
+            nodes[name] = (operator, depends_on)
         return nodes
 
     def _build_tasks(self) -> Dict[str, Node]:
@@ -148,9 +184,13 @@ class DAGMaker:
         return nodes
 
     @staticmethod
-    def _wire(nodes: Dict[str, Node]) -> None:
+    def _wire(nodes: Dict[str, Node], watcher_names=frozenset()) -> None:
         for name, (operator, depends_on) in nodes.items():
             for dep in depends_on:
+                # Watchers are event sources (assets driving the schedule), not
+                # task nodes, so a dependency on one is not a task edge.
+                if dep in watcher_names:
+                    continue
                 upstream = nodes.get(dep)
                 if upstream is None:
                     logger.warning(f"Dependency '{dep}' not found for '{name}'")
@@ -164,14 +204,13 @@ class DAGMaker:
             **self._build_tasks(),
             **self._build_actions(),
         }
-        self._wire(nodes)
+        self._wire(nodes, frozenset(self.watcher_assets))
         logger.info(f"Built DAG nodes: {list(nodes.keys())}")
         return nodes
 
     def generate_dags(self) -> DAG:
         dag_id = self.model_name
         dag_name = f"{dag_id}_dag"
-        dag_schedule = self.config.get('schedule', '@daily')
         default_args = {
             'owner': 'airflow',
             'depends_on_past': False,
@@ -180,6 +219,14 @@ class DAGMaker:
             'retries': 1,
             'retry_delay': timedelta(minutes=5),
         }
+        # When watchers are configured the DAG is event-driven: each matching
+        # Kafka message emits an asset event that starts a run. Otherwise fall
+        # back to the cron/preset schedule from the config.
+        self.watcher_assets = self._build_watcher_assets()
+        if self.watcher_assets:
+            dag_schedule = list(self.watcher_assets.values())
+        else:
+            dag_schedule = self.config.get('schedule', '@daily')
         dag_params = self.param_maker.generate_params()
         logger.info(
             f"Creating DAG '{dag_id}' schedule={dag_schedule} params={dag_params}"

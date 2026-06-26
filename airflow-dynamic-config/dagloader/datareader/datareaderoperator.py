@@ -20,10 +20,14 @@ class DataReaderOperator(BaseOperator):
     """
 
     def __init__(self, data_config, source_config: dict,
-                 intermediate_storage, *args, **kwargs):
+                 intermediate_storage, trigger_assets=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.intermediate_storage = intermediate_storage
         self.data_config = data_config
+        # Assets of the watchers this source depends on. When the DAG run was
+        # started by one of them, the matched key payloads (e.g. participant_id)
+        # are read from the run's triggering asset events and used to filter.
+        self.trigger_assets = list(trigger_assets or [])
         self._initial_source_config = copy.deepcopy(source_config) or {}
         self.source_config = copy.deepcopy(self._initial_source_config)
         self._resolve_config()
@@ -51,6 +55,37 @@ class DataReaderOperator(BaseOperator):
         self.source_config = new_source_config
         self._resolve_config()
 
+    def _iter_event_payloads(self, context):
+        """Yield the matched ``{field: value}`` payload of every triggering
+        asset event emitted by the watcher(s) this source depends on."""
+        triggering = (context or {}).get('triggering_asset_events') or {}
+        wanted = {getattr(a, 'name', None) for a in self.trigger_assets}
+        for asset in triggering:
+            if getattr(asset, 'name', None) not in wanted:
+                continue
+            for event in triggering[asset]:
+                payload = (getattr(event, 'extra', None) or {}).get('payload')
+                if isinstance(payload, dict) and payload:
+                    yield payload
+
+    def _collect_key_filters(self, context):
+        """De-duplicated list of matched key payloads from the run's triggering
+        asset events (e.g. ``[{"participant_id": "p1"}, {"participant_id": "p2"}]``).
+
+        Every event in the run is included so coalesced bursts are all
+        processed. Empty when the run was not asset triggered (e.g. a manual
+        run), which leaves the read unfiltered."""
+        if not self.trigger_assets:
+            return []
+        filters = []
+        seen = set()
+        for payload in self._iter_event_payloads(context):
+            dedup_key = tuple(sorted(payload.items()))
+            if dedup_key not in seen:
+                seen.add(dedup_key)
+                filters.append(payload)
+        return filters
+
     def execute(self, context):
         reader_kwargs = dict(self.reader_kwargs)
         # Give each DAG/source its own consumer group so offsets don't overlap
@@ -58,6 +93,13 @@ class DataReaderOperator(BaseOperator):
         if self.source_type == 'kafka' and not reader_kwargs.get('group_id'):
             dag_id = getattr(self, 'dag_id', None) or 'radar'
             reader_kwargs['group_id'] = f"{dag_id}.{self.source_name}"
+        key_filters = self._collect_key_filters(context)
+        if key_filters:
+            logger.info(
+                f"Data source '{self.source_name}' filtering to matched keys: "
+                f"{key_filters}"
+            )
+            reader_kwargs['key_filters'] = key_filters
         reader = DataReaderFactory.get_data_reader(
             self.source_type, **reader_kwargs
         )

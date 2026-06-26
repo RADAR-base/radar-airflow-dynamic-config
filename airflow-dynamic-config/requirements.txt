@@ -6,6 +6,7 @@ xgboost
 numba
 fastavro
 apache-airflow-providers-apache-kafka
+apache-airflow-providers-common-messaging
 apache-airflow-providers-amazon
 apache-airflow-providers-postgres
 confluent-kafka[avro]
