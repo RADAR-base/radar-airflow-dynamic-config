@@ -1,4 +1,4 @@
-model_name: Mcraving Prediction Model
+model_name: mcraving_prediction_model
 model_description: Craving prediction model
 schedule: "*/1 * * * *" # every 10 mins
 intermediate_results_storage:
@@ -64,7 +64,7 @@ actions:
     time: "immediate"
     config:
       message: "Craving predicted for participant: {{ craving_prediction_task.enrollment.participantID }}"
-      topic: "output_topic"
+      topic: "airflow_outputs"
       kafka_conn_id: kafka_staging
       backoff:
         enabled: true
