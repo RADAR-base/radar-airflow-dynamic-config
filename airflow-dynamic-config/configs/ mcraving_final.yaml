@@ -1,0 +1,75 @@
+model_name: Mcraving Prediction Model
+model_description: Craving prediction model
+schedule: "*/1 * * * *" # every 10 mins
+intermediate_results_storage:
+  type: timescaledb
+  config:
+    conn_id: timescale_staging
+    table_prefix: craving_prediction
+    hypertable: false
+
+watchers:
+  - name: craving_prediction_watcher
+    type: kafka
+    enabled: true
+    config:
+      conn_id: kafka_staging
+      project: STAGING_PROJECT
+      format: avro
+      schema_registry_url: "http://cp-schema-registry:8081"
+      topics:
+        - empatica-raw-data
+      poll_timeout: 10
+      poll_interval: 5
+      # Dotted path into the Avro EmpaticaRecord value; the participant is
+      # nested under `enrollment`, there is no top-level participant_id.
+      keys: enrollment.participantID
+
+data:
+  - name: mcraving_empatica_data
+    type: kafka
+    config:
+      conn_id: kafka_staging
+      project: STAGING_PROJECT
+      lookback_window: 7200 # 2 hours
+      format: avro
+      schema_registry_url: "http://cp-schema-registry:8081"
+      topics:
+        - empatica-raw-data
+    depends_on:
+      - craving_prediction_watcher
+
+tasks:
+  - name: preprocessing_task
+    type: custom
+    enabled: true
+    path: custom/mcravings/preprocessing.py
+    depends_on:
+      - mcraving_empatica_data
+
+  - name: craving_prediction_task
+    type: custom
+    enabled: true
+    path: custom/mcravings/prediction.py
+    depends_on:
+      - preprocessing_task
+
+actions:
+  - name: notify_participants
+    type: "send_notification"
+    filter_list_key: "craving_prediction_task"
+    condition: 'craving_prediction_task.prediction == 1'
+    depends_on:
+      - craving_prediction_task
+    time: "immediate"
+    config:
+      message: "Craving predicted for participant: {{ craving_prediction_task.enrollment.participantID }}"
+      topic: "output_topic"
+      kafka_conn_id: kafka_staging
+      backoff:
+        enabled: true
+        interval:  300
+        backoff_key: "enrollment.participantID"
+        backoff_strategy: "fixed"
+        max_messages: 3
+        max_messages_units: "day"
