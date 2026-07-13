@@ -18,7 +18,7 @@ watchers:
       format: avro
       schema_registry_url: "http://cp-schema-registry:8081"
       topics:
-        - empatica-raw-data
+        - connect_empatica_s3
       poll_timeout: 10
       poll_interval: 5
       # Dotted path into the Avro EmpaticaRecord value; the participant is
@@ -35,7 +35,7 @@ data:
       format: avro
       schema_registry_url: "http://cp-schema-registry:8081"
       topics:
-        - empatica-raw-data
+        - connect_empatica_s3
     depends_on:
       - craving_prediction_watcher
 
