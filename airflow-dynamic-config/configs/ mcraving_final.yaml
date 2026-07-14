@@ -56,7 +56,7 @@ tasks:
 
 actions:
   - name: notify_participants
-    type: "send_notification"
+    type: "send_notification_mcraving"
     filter_list_key: "craving_prediction_task"
     condition: 'craving_prediction_task.prediction == 1'
     depends_on:

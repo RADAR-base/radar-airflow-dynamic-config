@@ -1,6 +1,7 @@
 from airflow.providers.apache.kafka.hooks.produce import KafkaProducerHook
 from airflow.sdk import BaseOperator
 import copy
+import json
 import logging
 import re
 from typing import Any
@@ -19,10 +20,16 @@ class KafkaWriter():
     def write(self, data):
         producer_hook = KafkaProducerHook(kafka_config_id=self.kafka_conn_id)
         producer = producer_hook.get_producer()
+        if isinstance(data, (dict, list)):
+            value = json.dumps(data, default=str).encode('utf-8')
+        elif isinstance(data, str):
+            value = data.encode('utf-8')
+        else:
+            value = data
         try:
             producer.produce(
                 topic=self.topic,
-                value=data.encode('utf-8') if isinstance(data, str) else data
+                value=value
             )
             producer.flush()
         finally:
@@ -107,7 +114,7 @@ class ActionParser:
             time = ""
         else:
             try:
-                time = parser.parse(self.action_time)
+                time = parser.parse(self.action_time).isoformat()
             except Exception as e:
                 logger.warning(f"Failed to parse time for action \
                                {self.action_name}: {e}")
@@ -223,7 +230,7 @@ class ActionOperator(BaseOperator):
                     f"Action {self.action_parser.action_name} "
                     f"produced report: {report}"
                 )
-                self.writer.write(str(report))
+                self.writer.write(report)
                 logger.info(
                     f"Report for action {self.action_parser.action_name} "
                     f"sent to Kafka topic: {self.writer.topic}"
@@ -234,7 +241,7 @@ class ActionOperator(BaseOperator):
                 f"Action {self.action_parser.action_name} "
                 f"produced report: {report}"
             )
-            self.writer.write(str(report))
+            self.writer.write(report)
             logger.info(
                 f"Report for action {self.action_parser.action_name} "
                 f"sent to Kafka topic: {self.writer.topic}"

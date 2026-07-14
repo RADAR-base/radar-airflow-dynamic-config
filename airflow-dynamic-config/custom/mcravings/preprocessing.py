@@ -107,5 +107,4 @@ class PreprocessingTaskProcessor():
             )
 
         preprocessed_data = pd.concat(frames, ignore_index=True)
-        logger.info(f"Preprocessed data final size: {len(preprocessed_data)}")
-        return preprocessed_data
+        return preprocessed_data.to_dict(orient='records')
