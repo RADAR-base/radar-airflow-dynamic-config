@@ -19,4 +19,7 @@ class PredictionTaskProcessor():
                 "Feature data is empty or missing 'participant_id'; nothing to predict."
             )
         df['prediction'] = df['participant_id'].apply(lambda x: random.choice([0, 1]))
+        df = df.groupby('participant_id')['prediction'].mean().reset_index()
+        df['prediction'] = df['prediction'].apply(lambda x: 1 if x >= 0.5 else 0)
+        logger.info(df)
         return df[['participant_id', 'prediction']].to_dict(orient='records')
