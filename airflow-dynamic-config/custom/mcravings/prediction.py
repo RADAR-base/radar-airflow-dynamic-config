@@ -12,6 +12,7 @@ class PredictionTaskProcessor():
         for key, value in data.items():
             dfs.append(pd.DataFrame(value))
         df = pd.concat(dfs, ignore_index=True)
+        logger.info(f"Feature columns: {df.columns.tolist()}")
         if not df.shape[0]:
             raise AirflowSkipException("No feature data to predict on.")
         if df.empty or 'participant_id' not in df.columns:
@@ -19,7 +20,6 @@ class PredictionTaskProcessor():
                 "Feature data is empty or missing 'participant_id'; nothing to predict."
             )
         df['prediction'] = df['participant_id'].apply(lambda x: random.choice([0, 1]))
-        df = df.groupby('participant_id')['prediction'].mean().reset_index()
-        df['prediction'] = df['prediction'].apply(lambda x: 1 if x >= 0.5 else 0)
+        df = df.groupby('participant_id')['prediction'].max().reset_index()  # One prediction per participant
         logger.info(df)
         return df[['participant_id', 'prediction']].to_dict(orient='records')
