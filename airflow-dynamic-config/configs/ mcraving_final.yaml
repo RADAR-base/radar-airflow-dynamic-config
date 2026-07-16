@@ -68,7 +68,7 @@ actions:
       kafka_conn_id: kafka_staging
       backoff:
         enabled: true
-        interval:  300
+        interval:  7200
         backoff_key: "enrollment.participantID"
         backoff_strategy: "fixed"
         max_messages: 3
