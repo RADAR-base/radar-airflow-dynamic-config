@@ -1,10 +1,17 @@
 from dagloader.intermediatestorage.storage import Storage
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+import hashlib
 import pickle
 from typing import Any
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Postgres truncates identifiers at NAMEDATALEN-1 bytes *silently*, so two
+# long names sharing a prefix end up pointing at the same table. Anything
+# longer is hashed down instead (see _fit_identifier).
+MAX_IDENTIFIER_LENGTH = 63
+_HASH_LENGTH = 8
 
 
 class PostgresStorage(Storage):
@@ -44,12 +51,37 @@ class PostgresStorage(Storage):
             sanitized = f"t_{sanitized}"
         return sanitized
 
+    def _fit_identifier(self, value: str) -> str:
+        """Shorten an identifier to something Postgres will not truncate.
+
+        Truncating on its own is not safe: two keys sharing the first 63
+        bytes would resolve to the same table and read each other's
+        snapshots. Keeping a hash of the full name in the suffix makes the
+        result unique and stable across runs.
+        """
+        encoded = value.encode('utf-8')
+        if len(encoded) <= MAX_IDENTIFIER_LENGTH:
+            return value
+        digest = hashlib.sha1(
+            encoded, usedforsecurity=False
+        ).hexdigest()[:_HASH_LENGTH]
+        keep = MAX_IDENTIFIER_LENGTH - _HASH_LENGTH - 1
+        head = encoded[:keep].decode('utf-8', 'ignore').rstrip('_')
+        shortened = f"{head}_{digest}"
+        logger.info(
+            f"Identifier '{value}' exceeds Postgres' "
+            f"{MAX_IDENTIFIER_LENGTH}-byte limit; using '{shortened}'."
+        )
+        return shortened
+
     def _table_name_for_key(self, key: str) -> str:
         base = self._sanitize_identifier(self.table_prefix)
         key_part = self._sanitize_identifier(key)
         if self.namespace:
-            return f"{base}_{self.namespace}_{key_part}"
-        return f"{base}_{key_part}"
+            name = f"{base}_{self.namespace}_{key_part}"
+        else:
+            name = f"{base}_{key_part}"
+        return self._fit_identifier(name)
 
     def _qualified(self, table_name: str) -> str:
         return f"{self._sanitize_identifier(self.schema)}.{table_name}"
@@ -80,9 +112,10 @@ class PostgresStorage(Storage):
             )
             """
         )
+        index_name = self._fit_identifier(f"{table_name}_run_id_idx")
         hook.run(
             f"CREATE INDEX IF NOT EXISTS "
-            f"{table_name}_run_id_idx ON {qualified} (run_id)"
+            f"{index_name} ON {qualified} (run_id)"
         )
         if self.hypertable:
             try:

@@ -212,7 +212,6 @@ class ActionOperator(BaseOperator):
                 f"No data found for key '{self.key}' in action "
                 f"{self.action_parser.action_name}. Action will be skipped."
             )
-
         elif isinstance(data[self.key], list):
             filtered = self.backoff_filter.apply(data[self.key])
             logger.info("After backoff filter, %d items remain for action "
