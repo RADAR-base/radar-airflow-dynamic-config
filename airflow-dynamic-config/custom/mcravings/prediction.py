@@ -1,10 +1,14 @@
 import random
+from pathlib import Path
 import pandas as pd
 import logging
 from airflow.exceptions import AirflowSkipException
+import pickle
 logger = logging.getLogger(__name__)
+
 class PredictionTaskProcessor():
     def __init__(self):
+        self.MODEL_DIR = Path(__file__).resolve().parent / 'models'
         super().__init__()
 
     def execute(self, data):
@@ -19,7 +23,9 @@ class PredictionTaskProcessor():
             raise AirflowSkipException(
                 "Feature data is empty or missing 'participant_id'; nothing to predict."
             )
-        df['prediction'] = df['participant_id'].apply(lambda x: random.choice([0, 1]))
-        df = df.groupby('participant_id')['prediction'].max().reset_index()  # One prediction per participant
+        with open(self.MODEL_DIR / 'model_pipeline.pickle', 'rb') as f :
+            loaded_model = pickle.load(f)
+        df['prediction_prob'] = loaded_model.predict_proba(df[loaded_model.feature_names_in_])[:, 1]
+        df['prediction'] = (df['prediction_prob'] > 0.5).astype(int)
         logger.info(df)
-        return df[['participant_id', 'prediction']].to_dict(orient='records')
+        return df[['participant_id', 'prediction', 'window_start']].to_dict(orient='records')
