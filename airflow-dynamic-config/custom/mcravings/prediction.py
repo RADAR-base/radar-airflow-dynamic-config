@@ -1,5 +1,12 @@
 import random
+import os
+import sys
 from pathlib import Path
+
+_SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+if _SRC_DIR not in sys.path:
+    sys.path.insert(0, _SRC_DIR)
+
 import pandas as pd
 import logging
 from airflow.exceptions import AirflowSkipException
