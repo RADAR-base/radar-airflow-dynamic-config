@@ -48,10 +48,6 @@ class DataReaderOperator(BaseOperator):
         new_source_config['config'] = {**base_config, **override}
         if new_source_config == self.source_config:
             return
-        logger.info(
-            f"Data source '{self.task_id}' applying runtime config override: "
-            f"{sorted(override.keys())}"
-        )
         self.source_config = new_source_config
         self._resolve_config()
 

@@ -62,10 +62,8 @@ class KafkaDataReader(DataReader):
         return self._avro_deserializer
 
     def read_data(self):
-        logger.info(f"Reading data from Kafka topics: {self.topics}")
         data = {}
         for topic in self.topics:
-            logger.info(f"Consuming messages from topic: {topic}")
             data[topic] = self._consume_topic(topic)
         return data
 

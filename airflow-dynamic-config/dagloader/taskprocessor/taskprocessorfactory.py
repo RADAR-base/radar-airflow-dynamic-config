@@ -10,7 +10,6 @@ class TaskProcessorFactory:
         if processor_type == 'data_checks':
             return MissingDataTaskProcessor(intermediate_storage=kwargs.get('intermediate_storage'))
         if processor_type == 'custom':
-            logger.info(f"Creating CustomTaskProcessor with kwargs: {kwargs}")
             return CustomTaskProcessor(intermediate_storage=kwargs.get('intermediate_storage'),
                                        path=kwargs.get('task_config', {}).get('path'))
         else:

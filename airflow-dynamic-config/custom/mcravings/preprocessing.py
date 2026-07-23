@@ -44,8 +44,6 @@ class PreprocessingTaskProcessor():
         super().__init__()
 
     def execute(self, data):
-        logger.info(f"Preprocessing data size: {len(data)}")
-
         # Flatten every upstream/topic into a single record list.
         records = []
         for value in data.values():

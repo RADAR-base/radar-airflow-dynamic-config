@@ -71,10 +71,6 @@ class ConditionOperator(BaseBranchOperator):
             new_action_config['condition'] = condition_override
         if new_action_config == self.action_config:
             return
-        logger.info(
-            f"Condition '{self.task_id}' applying runtime override "
-            f"(config={bool(config_override)}, condition={bool(condition_override)})"
-        )
         self.action_config = new_action_config
         self._resolve_config()
 
@@ -83,7 +79,6 @@ class ConditionOperator(BaseBranchOperator):
         data = {}
         for data_key in task_ids:
             data[data_key] = self.intermediate_storage.load(data_key)
-            logger.info(f"Loaded data for key '{data_key}': {data[data_key]}")
         filter_list_key = self.action_config.get('filter_list_key')
         if filter_list_key and filter_list_key in data:
             elements = data[filter_list_key]

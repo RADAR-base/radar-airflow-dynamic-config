@@ -10,7 +10,6 @@ class PreprocessingTaskProcessor():
         # Implement your custom preprocessing logic here
         # For example, you can perform data cleaning, feature engineering, etc.
         # This is a placeholder implementation and should be replaced with actual logic
-        logger.info(f"Preprocessing data: {data}")
         # combined keys of the data
         preprocessed_data = []
         for key, value in data.items():

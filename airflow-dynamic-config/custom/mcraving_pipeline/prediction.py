@@ -7,7 +7,6 @@ class PredictionTaskProcessor():
         super().__init__()
 
     def execute(self, data):
-        #logger.info(f"Predicting with data: {data}")
         dfs = []
         for data_sources in data.values():
             if isinstance(data_sources, list):
@@ -16,7 +15,5 @@ class PredictionTaskProcessor():
             for _, topic_data in data_sources.items():
                 dfs.append(pd.DataFrame(topic_data))
         df = pd.concat(dfs, ignore_index=True)
-        logger.info(f"columns: {df.columns.tolist()}")
         df['prediction'] = df['enrollment.participantID'].apply(lambda x: random.choice([0, 1]))
-        logger.info(f"Prediction results: {df[['enrollment.participantID', 'prediction']]}")
         return df[['enrollment.participantID', 'prediction']].to_dict(orient='records')

@@ -12,7 +12,6 @@ class ParamMaker():
         params = {}
         params = params | self._generate_sensor_param()
         params = params | self._generate_data_param()
-        logger.info(f"Generated data params: {params}")
         params = params | self._generate_storage_param()
         params = params | self._generate_tasks_param()
         params = params | self._generate_action_param()
