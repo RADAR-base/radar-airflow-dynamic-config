@@ -16,7 +16,7 @@ watchers:
       conn_id: kafka_staging
       project: STAGING_PROJECT
       format: avro
-      schema_registry_url: "http://cp-schema-registry:8081"
+      schema_registry_url: "http://cp-schema-registry.default.svc.cluster.local:8081"
       topics:
         - connect_empatica_s3
       poll_timeout: 10
@@ -33,7 +33,7 @@ data:
       project: STAGING_PROJECT
       lookback_window: 7200 # 2 hours
       format: avro
-      schema_registry_url: "http://cp-schema-registry:8081"
+      schema_registry_url: "http://cp-schema-registry.default.svc.cluster.local:8081"
       topics:
         - connect_empatica_s3
     depends_on:
