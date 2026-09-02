@@ -204,9 +204,6 @@ class ActionOperator(BaseOperator):
         )
         data = {}
         data[self.key] = self.intermediate_storage.load(self.key)
-        logger.info(
-            f"Data loaded for action {self.action_parser.action_name}: {data}"
-        )
         if data[self.key] is None:
             logger.warning(
                 f"No data found for key '{self.key}' in action "
@@ -236,12 +233,12 @@ class ActionOperator(BaseOperator):
                 )
         else:
             report = self.action_parser.producer_function(data)
-            logger.info(
+            logger.debug(
                 f"Action {self.action_parser.action_name} "
                 f"produced report: {report}"
             )
             self.writer.write(report)
-            logger.info(
+            logger.debug(
                 f"Report for action {self.action_parser.action_name} "
                 f"sent to Kafka topic: {self.writer.topic}"
             )
