@@ -32,6 +32,7 @@ class PredictionTaskProcessor():
         with open(self.MODEL_DIR / 'model_pipeline.pickle', 'rb') as f :
             loaded_model = pickle.load(f)
         df['prediction_prob'] = loaded_model.predict_proba(df[loaded_model.feature_names_in_])[:, 1]
+        logger.info(f"df.values: {df.values}")
         df['prediction'] = (df['prediction_prob'] > 0.5).astype(int)
         # if multiple true predictions exist for a participant, keep the latest window's prediction only
         prediction_df = df.loc[df['prediction'] == 1]
