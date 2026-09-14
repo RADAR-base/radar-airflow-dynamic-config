@@ -7,6 +7,7 @@ intermediate_results_storage:
     conn_id: timescale_staging
     table_prefix: craving_data_v3
     hypertable: false
+    retention_time: 7  # days to keep intermediate results; null keeps them forever
 
 watchers:
   - name: craving_prediction_watcher
@@ -73,3 +74,4 @@ actions:
         backoff_strategy: "fixed"
         max_messages: 3
         max_messages_units: "day"
+        apply_retention_policy: true  # false keeps backoff state beyond retention_time

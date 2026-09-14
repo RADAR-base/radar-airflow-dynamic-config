@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, FrozenSet, Optional
 from abc import ABC, abstractmethod
 
 
@@ -32,10 +32,21 @@ class Storage(ABC):
     # left as None and the run id is resolved automatically from Airflow's
     # current task context, so callers just use save()/load() as before.
     run_id: Optional[str] = None
+    # Keys whose data must never be removed by a retention policy. Immutable
+    # at class level so instances never share a mutable set.
+    retention_exempt_keys: FrozenSet[str] = frozenset()
 
     def set_run_id(self, run_id: Optional[str]) -> None:
         """Force the run id (e.g. in tests). Normally unnecessary."""
         self.run_id = run_id
+
+    def set_retention_exempt(self, key: str, exempt: bool = True) -> None:
+        """Opt a key in or out of the storage's retention policy. Backends
+        without retention ignore this."""
+        if exempt:
+            self.retention_exempt_keys = self.retention_exempt_keys | {key}
+        else:
+            self.retention_exempt_keys = self.retention_exempt_keys - {key}
 
     def _effective_run_id(self) -> Optional[str]:
         """The run id to scope by: an explicit override if set, otherwise the

@@ -9,6 +9,7 @@ An action may declare a `backoff` block:
       backoff_strategy: "fixed"
       max_messages: 3
       max_messages_units: "day"
+      apply_retention_policy: true
 
 When applied to a list of items, the filter drops any item whose
 `backoff_key` value either fired within the `interval` window (minimum
@@ -18,6 +19,11 @@ gap between two consecutive messages) or has already fired
 "day" when omitted). Either limit may be configured on its own. State is
 persisted in the pipeline's intermediate storage under
 `<action_name>_backoff` as a dict of `{key_value: [iso_timestamp, ...]}`.
+
+`apply_retention_policy` (default true) controls whether that state is
+subject to the storage's `retention_time`. Set it to false when a backoff
+window is longer than the retention time, so the fire history is not
+expired while it is still needed.
 """
 
 from __future__ import annotations
@@ -64,6 +70,14 @@ class BackoffFilter:
         self.window: Optional[timedelta] = None
         self.max_messages: Optional[int] = None
         self.message_window: Optional[timedelta] = None
+        self.apply_retention_policy = self._parse_apply_retention_policy(
+            action_name
+        )
+        # Register on every build (not only when disabled) so a runtime
+        # config override can switch retention back on for this key.
+        self.storage.set_retention_exempt(
+            self.storage_key, exempt=not self.apply_retention_policy
+        )
         self.enabled = (
             bool(self.config)
             and self.config.get('enabled', True) is not False
@@ -81,6 +95,17 @@ class BackoffFilter:
                     f"'max_messages_units'."
                 )
                 self.enabled = False
+
+    def _parse_apply_retention_policy(self, action_name: str) -> bool:
+        raw = self.config.get('apply_retention_policy', True)
+        if not isinstance(raw, bool):
+            logger.warning(
+                f"Backoff for action '{action_name}': "
+                f"'apply_retention_policy' must be true or false, got "
+                f"{raw!r}; defaulting to false."
+            )
+            return False
+        return raw
 
     def _parse_interval(self, action_name: str) -> None:
         raw_seconds = self.config.get('interval')
