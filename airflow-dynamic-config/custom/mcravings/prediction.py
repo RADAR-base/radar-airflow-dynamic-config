@@ -9,7 +9,7 @@ if _SRC_DIR not in sys.path:
 
 import pandas as pd
 import logging
-from airflow.exceptions import AirflowSkipException
+from dagloader.taskprocessor.exceptions import AirflowSkipException
 import pickle
 logger = logging.getLogger(__name__)
 
@@ -38,4 +38,9 @@ class PredictionTaskProcessor():
         prediction_df = prediction_df.loc[prediction_df.groupby('participant_id')['window_start'].idxmax()]
         logger.info(f"Predicted craving for participants {prediction_df['participant_id'].values} for timestamps {prediction_df['window_start'].values}")
         prediction_df = prediction_df.loc[prediction_df['window_start'] > pd.Timestamp.now(tz='UTC') - pd.Timedelta(minutes=45)]
-        return prediction_df[['participant_id', 'prediction', 'window_start']].to_dict(orient='records')
+        # Airflow-side steps (condition, notification, backoff) decode this
+        # result with Airflow's own pandas, which can differ from this env's.
+        # Return plain Python types so it loads anywhere.
+        prediction_df = prediction_df[['participant_id', 'prediction', 'window_start']].copy()
+        prediction_df['window_start'] = prediction_df['window_start'].map(lambda t: t.isoformat())
+        return prediction_df.to_dict(orient='records')

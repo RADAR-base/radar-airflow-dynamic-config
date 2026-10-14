@@ -7,7 +7,7 @@ if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
 import pandas as pd
-from airflow.exceptions import AirflowSkipException
+from dagloader.taskprocessor.exceptions import AirflowSkipException
 
 from mcraving.realtime.avro import records_bounds
 from mcraving.realtime.pipeline import avro_records_to_feature_matrix

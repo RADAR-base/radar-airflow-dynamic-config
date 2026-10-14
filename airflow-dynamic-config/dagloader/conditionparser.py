@@ -1,4 +1,3 @@
-import rule_engine as re
 from airflow.providers.standard.operators.branch import BaseBranchOperator
 import copy
 import logging
@@ -10,7 +9,16 @@ class ConditionParser:
     def __init__(self, condition_str: str, condition_name: str = "default_condition"):
         self.condition_str = condition_str
         self.condition_name = condition_name
-        self.engine = re.Rule(condition_str)
+        self._engine = None
+
+    @property
+    def engine(self):
+        # Compiled on first use so DAG parsing doesn't pay for importing
+        # rule_engine; syntax errors surface when the branch task runs.
+        if self._engine is None:
+            import rule_engine
+            self._engine = rule_engine.Rule(self.condition_str)
+        return self._engine
 
     def evaluate(self, context: dict) -> bool:
         return self.engine.matches(context)

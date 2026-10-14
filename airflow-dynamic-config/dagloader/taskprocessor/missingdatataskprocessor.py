@@ -4,7 +4,6 @@ from dagloader.taskprocessor.taskprocessor import TaskProcessor
 import json
 import logging
 from datetime import datetime, timedelta
-import pandas as pd
 import os
 from typing import List, Any
 
@@ -17,6 +16,9 @@ class MissingDataTaskProcessor(TaskProcessor):
         super().__init__()
 
     def execute(self, data, **kwargs) -> Any:
+        # Imported here, not at module level, to keep DAG parsing fast.
+        import pandas as pd
+
         reports = []
         dfs = []
         for data_sources in data.values():

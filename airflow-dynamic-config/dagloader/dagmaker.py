@@ -15,7 +15,6 @@ from dagloader.sensors.sensorfactory import SensorFactory
 from dagloader.watchers.watcherfactory import WatcherFactory
 from dagloader.environment import PipelineEnvironment
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -109,8 +108,7 @@ class DAGMaker:
 
     def _build_data(self) -> Dict[str, Node]:
         nodes: Dict[str, Node] = {}
-        data_entries = self.config.get('data', []) or []
-        for source in data_entries:
+        for source in self.config.get('data', []) or []:
             if not self._is_enabled(source):
                 continue
             name = source.get('name')
@@ -127,7 +125,6 @@ class DAGMaker:
             ]
             operator = DataReaderOperator(
                 task_id=name,
-                data_config=data_entries,
                 source_config=source,
                 intermediate_storage=self.storage,
                 trigger_assets=trigger_assets,
@@ -210,7 +207,7 @@ class DAGMaker:
             **self._build_actions(),
         }
         self._wire(nodes, frozenset(self.watcher_assets))
-        logger.info(f"Built DAG nodes: {list(nodes.keys())}")
+        logger.debug(f"Built DAG nodes: {list(nodes.keys())}")
         return nodes
 
     def generate_dags(self) -> DAG:
@@ -233,7 +230,7 @@ class DAGMaker:
         else:
             dag_schedule = self.config.get('schedule', '@daily')
         dag_params = self.param_maker.generate_params()
-        logger.info(
+        logger.debug(
             f"Creating DAG '{dag_id}' schedule={dag_schedule} params={dag_params}"
         )
         with DAG(

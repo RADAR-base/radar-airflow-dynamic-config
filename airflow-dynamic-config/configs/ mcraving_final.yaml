@@ -1,6 +1,14 @@
 model_name: mcraving_prediction_model
 model_description: Craving prediction model
 schedule: "*/1 * * * *" # every 10 mins
+
+# Custom tasks run in their own Python env, built once on the envs volume and
+# reused by every later run. See dagloader/environment/envmanager.py.
+environment:
+  name: mcravings_env
+  requirements:
+    path: custom/mcravings/requirements.txt
+
 intermediate_results_storage:
   type: timescaledb
   config:

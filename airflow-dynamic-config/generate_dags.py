@@ -44,5 +44,5 @@ globals().update(_all_dags)
 
 
 if __name__ == "__main__":
-    dags_dict = load_all_dags()
-    logger.info(f"Generated DAGs: {list(dags_dict.keys())}")
+    logging.basicConfig(level=logging.INFO)
+    logger.info(f"Generated DAGs: {list(_all_dags.keys())}")

@@ -19,11 +19,10 @@ class DataReaderOperator(BaseOperator):
     into `source_config['config']`.
     """
 
-    def __init__(self, data_config, source_config: dict,
+    def __init__(self, source_config: dict,
                  intermediate_storage, trigger_assets=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.intermediate_storage = intermediate_storage
-        self.data_config = data_config
         # Assets of the watchers this source depends on. When the DAG run was
         # started by one of them, the matched key payloads (e.g. participant_id)
         # are read from the run's triggering asset events and used to filter.

@@ -64,6 +64,11 @@ def _file_lock(path: str):
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+class PipelineTaskSkipped(Exception):
+    """The task asked to be skipped; the operator turns this into an
+    Airflow skip. Kept Airflow-free so this module stays standard library."""
+
+
 class PipelineEnvironmentError(RuntimeError):
     """Raised when an environment cannot be built or a task in it fails."""
 
@@ -169,8 +174,11 @@ class PipelineEnvironment:
 
     def _run(self, cmd: List[str]) -> None:
         logger.info(f"[env:{self.name}] $ {' '.join(cmd)}")
+        # The uv cache and the envs volume are usually different filesystems,
+        # so hardlinking always fails; copy directly instead of warning.
+        env = {**os.environ, 'UV_LINK_MODE': os.environ.get('UV_LINK_MODE', 'copy')}
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True)
+                              text=True, env=env)
         for line in proc.stdout.splitlines():
             logger.info(f"[env:{self.name}] {line}")
         if proc.returncode != 0:
@@ -260,6 +268,10 @@ class PipelineEnvironment:
 
             result_path = os.path.join(work_dir, 'result.pkl')
             error_path = os.path.join(work_dir, 'error.txt')
+            skip_path = os.path.join(work_dir, 'skip.txt')
+            if returncode == 0 and os.path.isfile(skip_path):
+                with open(skip_path) as f:
+                    raise PipelineTaskSkipped(f.read())
             if returncode == 0 and os.path.isfile(result_path):
                 with open(result_path, 'rb') as f:
                     return f.read()

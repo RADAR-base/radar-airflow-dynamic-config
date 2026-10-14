@@ -1,4 +1,3 @@
-from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from dagloader.sensors.sensoroperator import ConfigurableSensorOperator
 import logging
 import re
@@ -17,6 +16,9 @@ class S3SensorOperator(ConfigurableSensorOperator):
         if not self.bucket:
             logger.warning("S3 sensor has no bucket configured.")
             return False
+
+        # Imported here, not at module level, to keep DAG parsing fast.
+        from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
         hook = S3Hook(aws_conn_id=self.aws_conn_id)
         keys = hook.list_keys(bucket_name=self.bucket, prefix=self.prefix) or []

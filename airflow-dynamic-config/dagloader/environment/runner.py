@@ -11,7 +11,8 @@ Invoked by ``PipelineEnvironment.run_task_raw`` as::
   intermediate storage keeps it (pickle bytes), never re-encoded by Airflow
 
 The runner decodes the inputs, calls the task, and writes either
-``result.pkl`` (the encoded result, saved to storage as-is by Airflow) or
+``result.pkl`` (the encoded result, saved to storage as-is by Airflow),
+``skip.txt`` (the task raised ``AirflowSkipException``; holds its message) or
 ``error.txt`` (a traceback). Only the standard library and the venv's own
 packages are available here.
 """
@@ -31,6 +32,10 @@ from dagloader.taskprocessor import customloader  # noqa: E402
 
 RESULT_FILE = 'result.pkl'
 ERROR_FILE = 'error.txt'
+SKIP_FILE = 'skip.txt'
+# Matched by name so both Airflow's class and the stand-in from
+# dagloader.taskprocessor.exceptions count as a skip.
+SKIP_EXCEPTION_NAME = 'AirflowSkipException'
 
 
 def main(work_dir):
@@ -56,7 +61,11 @@ def main(work_dir):
             pickle.dump(result, f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp_path, os.path.join(work_dir, RESULT_FILE))
         return 0
-    except BaseException:
+    except BaseException as exc:
+        if type(exc).__name__ == SKIP_EXCEPTION_NAME:
+            with open(os.path.join(work_dir, SKIP_FILE), 'w') as f:
+                f.write(str(exc))
+            return 0
         with open(os.path.join(work_dir, ERROR_FILE), 'w') as f:
             f.write(traceback.format_exc())
         return 1

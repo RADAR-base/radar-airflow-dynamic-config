@@ -1,6 +1,7 @@
 from airflow.sdk import BaseOperator
 from dagloader.taskprocessor.taskprocessorfactory import TaskProcessorFactory
-from dagloader.environment import PipelineEnvironment
+from airflow.exceptions import AirflowSkipException
+from dagloader.environment import PipelineEnvironment, PipelineTaskSkipped
 import copy
 import logging
 
@@ -92,7 +93,10 @@ class TaskOperator(BaseOperator):
                 upstream: self.intermediate_storage.load_raw(upstream)
                 for upstream in upstreams
             }
-            payload = self.processor.execute_raw(inputs, **execute_kwargs)
+            try:
+                payload = self.processor.execute_raw(inputs, **execute_kwargs)
+            except PipelineTaskSkipped as skip:
+                raise AirflowSkipException(str(skip)) from None
             logger.info(
                 f"Task '{name}' executed in environment "
                 f"'{self.environment.name}'; result is {len(payload)} bytes"

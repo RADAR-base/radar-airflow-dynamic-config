@@ -1,0 +1,14 @@
+# Environment for the mcravings pipeline (custom/mcravings).
+# Pinned so every worker builds the same env. Changing this file makes the
+# next run build a new env alongside the old one.
+#
+# These two must match the versions models/model_pipeline.pickle was saved
+# with; change them only together with a retrained model.
+scikit-learn==1.7.1
+xgboost==3.0.5
+
+numpy==2.5.4
+pandas==3.0.6
+scipy==1.18.1
+numba==0.68.0
+fastavro==1.13.1
