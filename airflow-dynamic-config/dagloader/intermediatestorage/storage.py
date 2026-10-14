@@ -1,3 +1,4 @@
+import pickle
 from typing import Any, FrozenSet, Optional
 from abc import ABC, abstractmethod
 
@@ -67,6 +68,18 @@ class Storage(ABC):
         run (resolved automatically); otherwise the most recent value across
         all runs is returned (used for cross-run state such as backoff)."""
         pass
+
+    # Raw access to the stored payload, which is the pickle encoding of the
+    # data. Tasks running in a separate Python env pass these bytes straight
+    # through, so the Airflow process never decodes or re-encodes their data.
+    # Backends override these to skip pickling entirely; the defaults below
+    # keep any backend that only implements save/load working.
+    def save_raw(self, key: str, payload: bytes) -> None:
+        self.save(key, pickle.loads(payload))
+
+    def load_raw(self, key: str, scoped: bool = True) -> bytes:
+        return pickle.dumps(self.load(key, scoped=scoped),
+                            protocol=pickle.HIGHEST_PROTOCOL)
 
     @abstractmethod
     def init(self, **kwargs):

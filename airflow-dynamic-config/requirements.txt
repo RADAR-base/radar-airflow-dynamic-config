@@ -1,9 +1,3 @@
-
-numpy
-pandas
-scikit-learn
-xgboost
-numba
 fastavro
 apache-airflow-providers-apache-kafka
 apache-airflow-providers-common-messaging
@@ -13,4 +7,3 @@ confluent-kafka[avro]
 apache-airflow
 pykwalify
 rule-engine
-scipy

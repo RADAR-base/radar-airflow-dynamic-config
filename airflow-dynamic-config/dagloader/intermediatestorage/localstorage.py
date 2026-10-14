@@ -20,11 +20,17 @@ class LocalStorage(Storage):
         return f"{self.base_path}/{key}.pkl"
 
     def save(self, key: str, data: Any) -> None:
-        file_path = self._path_for(key, self._effective_run_id())
-        with open(file_path, 'wb') as f:
-            pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        self.save_raw(key, pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL))
 
     def load(self, key: str, scoped: bool = True) -> Any:
+        return pickle.loads(self.load_raw(key, scoped=scoped))
+
+    def save_raw(self, key: str, payload: bytes) -> None:
+        file_path = self._path_for(key, self._effective_run_id())
+        with open(file_path, 'wb') as f:
+            f.write(payload)
+
+    def load_raw(self, key: str, scoped: bool = True) -> bytes:
         run_id = self._effective_run_id()
         if scoped and run_id is not None:
             file_path = self._path_for(key, run_id)
@@ -33,7 +39,7 @@ class LocalStorage(Storage):
         if not file_path or not os.path.exists(file_path):
             raise FileNotFoundError(f"No data found for key: {key}")
         with open(file_path, 'rb') as f:
-            return pickle.load(f)
+            return f.read()
 
     def _latest_global(self, key: str) -> str:
         """Most recent snapshot for a key across all runs (used for

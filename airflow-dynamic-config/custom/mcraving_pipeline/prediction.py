@@ -2,6 +2,8 @@ import random
 import pandas as pd
 import logging
 logger = logging.getLogger(__name__)
+
+
 class PredictionTaskProcessor():
     def __init__(self):
         super().__init__()

@@ -232,11 +232,16 @@ class PostgresStorage(Storage):
         )
 
     def save(self, key: str, data: Any) -> None:
+        self.save_raw(key, pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL))
+
+    def load(self, key: str, scoped: bool = True) -> Any:
+        return pickle.loads(self.load_raw(key, scoped=scoped))
+
+    def save_raw(self, key: str, payload: bytes) -> None:
         table_name = self._table_name_for_key(key)
         retention_time = self._retention_for_key(key)
         retention_managed = self._ensure_table_exists(table_name,
                                                       retention_time)
-        payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
         hook = self._hook()
         hook.run(
             f"INSERT INTO {self._qualified(table_name)} "
@@ -246,7 +251,7 @@ class PostgresStorage(Storage):
         if retention_time is not None and not retention_managed:
             self._prune_expired(hook, table_name, retention_time)
 
-    def load(self, key: str, scoped: bool = True) -> Any:
+    def load_raw(self, key: str, scoped: bool = True) -> bytes:
         table_name = self._table_name_for_key(key)
         self._ensure_table_exists(table_name, self._retention_for_key(key))
         hook = self._hook()
@@ -266,7 +271,7 @@ class PostgresStorage(Storage):
         payload = row[0]
         if isinstance(payload, memoryview):
             payload = payload.tobytes()
-        return pickle.loads(bytes(payload))
+        return bytes(payload)
 
     def init(self, **kwargs):
         directory_name = kwargs.get('directory_name')

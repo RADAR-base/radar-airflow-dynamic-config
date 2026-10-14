@@ -13,6 +13,7 @@ from dagloader.conditionparser import ConditionOperator
 from dagloader.actionparser import ActionOperator
 from dagloader.sensors.sensorfactory import SensorFactory
 from dagloader.watchers.watcherfactory import WatcherFactory
+from dagloader.environment import PipelineEnvironment
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,6 +51,9 @@ class DAGMaker:
         self.model_name = self.config.get('model_name', 'unknown').lower()
         self.storage.init(directory_name=self.model_name)
         self.param_maker = ParamMaker(self.config)
+        # Optional pipeline-level Python env for custom tasks; None means the
+        # tasks run in the Airflow env.
+        self.environment_config = PipelineEnvironment.config_from_pipeline(self.config)
         # name -> Asset for each enabled watcher; populated in generate_dags and
         # consumed when wiring data sources to their triggering assets.
         self.watcher_assets: Dict[str, Any] = {}
@@ -144,6 +148,7 @@ class DAGMaker:
                 task_id=name,
                 task_config=task,
                 intermediate_storage=self.storage,
+                environment_config=self.environment_config,
             )
             nodes[name] = (operator, self._depends_on(task))
         return nodes

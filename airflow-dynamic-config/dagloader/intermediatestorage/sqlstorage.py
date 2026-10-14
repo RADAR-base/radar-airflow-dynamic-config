@@ -51,9 +51,14 @@ class SQLStorage(Storage):
             conn.commit()
 
     def save(self, key: str, data: Any) -> None:
+        self.save_raw(key, pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL))
+
+    def load(self, key: str, scoped: bool = True) -> Any:
+        return pickle.loads(self.load_raw(key, scoped=scoped))
+
+    def save_raw(self, key: str, payload: bytes) -> None:
         table_name = self._table_name_for_key(key)
         self._ensure_table_exists(table_name)
-        payload = pickle.dumps(data, protocol=pickle.HIGHEST_PROTOCOL)
         with self._connect() as conn:
             conn.execute(
                 f"""
@@ -64,7 +69,7 @@ class SQLStorage(Storage):
             )
             conn.commit()
 
-    def load(self, key: str, scoped: bool = True) -> Any:
+    def load_raw(self, key: str, scoped: bool = True) -> bytes:
         table_name = self._table_name_for_key(key)
         self._ensure_table_exists(table_name)
         run_id = self._effective_run_id()
@@ -84,7 +89,7 @@ class SQLStorage(Storage):
         if row is None:
             raise FileNotFoundError(f"No data found for key: {key}")
 
-        return pickle.loads(row[0])
+        return bytes(row[0])
 
     def init(self, **kwargs):
         directory_name = kwargs.get('directory_name')

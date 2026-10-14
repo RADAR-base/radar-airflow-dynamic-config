@@ -11,6 +11,7 @@ class TaskProcessorFactory:
             return MissingDataTaskProcessor(intermediate_storage=kwargs.get('intermediate_storage'))
         if processor_type == 'custom':
             return CustomTaskProcessor(intermediate_storage=kwargs.get('intermediate_storage'),
-                                       path=kwargs.get('task_config', {}).get('path'))
+                                       path=kwargs.get('task_config', {}).get('path'),
+                                       environment=kwargs.get('environment'))
         else:
             raise ValueError(f"Unsupported processor type: {processor_type}")

@@ -1,6 +1,13 @@
 model_name: craving_prediction_model_v4
 model_description: Sample config to demonstrate craving prediction model
 schedule: "*/1 * * * *" # every 10 mins
+
+environment:
+  name: mcraving_pipeline_env
+  requirements:
+    path: custom/mcraving_pipeline/requirements.txt
+    python: "3.13"
+
 intermediate_results_storage:
   type: timescaledb
   config:
@@ -44,14 +51,14 @@ tasks:
   - name: preprocessing_task
     type: custom
     enabled: true
-    path: custom/mcravings/preprocessing.py
+    path: custom/mcraving_pipeline/preprocessing.py
     depends_on:
       - mcraving_empatica_data
 
   - name: craving_prediction_task
     type: custom
     enabled: true
-    path: custom/mcravings/prediction.py
+    path: custom/mcraving_pipeline/prediction.py
     depends_on:
       - preprocessing_task
 
