@@ -1,7 +1,11 @@
 from airflow.sdk import Param
+from dagloader.environment import PipelineEnvironment
 import logging
 
 logger = logging.getLogger(__name__)
+
+# DAG param holding the pipeline-level `environment` block.
+ENVIRONMENT_PARAM = 'environment'
 
 
 class ParamMaker():
@@ -15,6 +19,13 @@ class ParamMaker():
         params = params | self._generate_storage_param()
         params = params | self._generate_tasks_param()
         params = params | self._generate_action_param()
+        env_param = self._generate_environment_param()
+        if env_param and ENVIRONMENT_PARAM in params:
+            raise ValueError(
+                f"'{ENVIRONMENT_PARAM}' is reserved for the pipeline "
+                "environment param; rename the step that uses it."
+            )
+        params = params | env_param
         return params
 
     def _generate_sensor_param(self):
@@ -59,3 +70,12 @@ class ParamMaker():
                 params[f"{name}_condition"] = Param(
                     condition, type=["string", "null"])
         return params
+
+    def _generate_environment_param(self):
+        # Only pipelines that declare an env get the param. A mapping
+        # selects/edits the env; null or "default" runs in the Airflow env.
+        env_config = PipelineEnvironment.config_from_pipeline(self.config)
+        if env_config is None:
+            return {}
+        return {ENVIRONMENT_PARAM: Param(env_config,
+                                         type=["object", "string", "null"])}

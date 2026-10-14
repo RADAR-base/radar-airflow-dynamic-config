@@ -2,6 +2,7 @@ from airflow.sdk import BaseOperator
 from dagloader.taskprocessor.taskprocessorfactory import TaskProcessorFactory
 from airflow.exceptions import AirflowSkipException
 from dagloader.environment import PipelineEnvironment, PipelineTaskSkipped
+from dagloader.parammaker import ENVIRONMENT_PARAM
 import copy
 import logging
 
@@ -24,7 +25,9 @@ class TaskOperator(BaseOperator):
     Custom tasks run in a separate Python environment when one is set. The
     task's own `environment` key wins over the pipeline-level block passed as
     `environment_config`; `environment: default` forces the Airflow env. The
-    env is only built at execute time on the worker, never at DAG parse time.
+    pipeline-level block can be replaced at trigger time via the DAG's
+    `environment` Param. The env is only built at execute time on the
+    worker, never at DAG parse time.
     """
 
     def __init__(self, task_config, intermediate_storage, *args,
@@ -57,20 +60,36 @@ class TaskOperator(BaseOperator):
     def pre_execute(self, context):
         super().pre_execute(context)
         params = (context or {}).get('params') or {}
+        changed = False
+
+        # The `environment` param replaces the pipeline-level block as a
+        # whole; null or "default" means the Airflow env. A task-level
+        # `environment` key still wins over it.
+        if ENVIRONMENT_PARAM in params:
+            env_override = copy.deepcopy(params[ENVIRONMENT_PARAM])
+            if env_override != self._pipeline_environment_config:
+                logger.info(
+                    f"Task '{self.task_id}' applying runtime environment "
+                    f"override: {env_override!r}"
+                )
+                self._pipeline_environment_config = env_override
+                changed = True
+
         override = params.get(self.task_id)
-        if not isinstance(override, dict) or not override:
-            return
-        new_task_config = copy.deepcopy(self._initial_task_config)
-        base_config = new_task_config.get('config') or {}
-        new_task_config['config'] = {**base_config, **override}
-        if new_task_config == self.task_config:
-            return
-        logger.info(
-            f"Task '{self.task_id}' applying runtime config override: "
-            f"{sorted(override.keys())}"
-        )
-        self.task_config = new_task_config
-        self._resolve_config()
+        if isinstance(override, dict) and override:
+            new_task_config = copy.deepcopy(self._initial_task_config)
+            base_config = new_task_config.get('config') or {}
+            new_task_config['config'] = {**base_config, **override}
+            if new_task_config != self.task_config:
+                logger.info(
+                    f"Task '{self.task_id}' applying runtime config override: "
+                    f"{sorted(override.keys())}"
+                )
+                self.task_config = new_task_config
+                changed = True
+
+        if changed:
+            self._resolve_config()
 
     def execute(self, context):
         upstreams = self.task_config.get('depends_on', []) or []
